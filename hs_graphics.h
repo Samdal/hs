@@ -157,7 +157,6 @@ extern void hs_fps_callback_init(const hs_game_data gd, void(*mouse_callback)(GL
 #define GLFW_IMPL
 #include "glfw/glfw_impl.h"
 
-
 inline void
 hs_clear(const float r, const  float g, const  float b, const  float a, const GLbitfield mask)
 {
