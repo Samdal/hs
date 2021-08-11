@@ -150,7 +150,6 @@ extern hs_vobj* hs_vobj_create(const float    *vbuff, const uint32_t vbuffsize,
 extern void hs_vobj_delete(hs_vobj* vobj);
 extern void hs_fps_callback_init(const hs_game_data gd, void(*mouse_callback)(GLFWwindow*, double xpos, double ypos));
 
-
 #ifdef HS_IMPL
 
 #define GLAD_IMPL
