@@ -3,6 +3,7 @@
 
 #include <math.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #ifndef NO_STDIO
@@ -26,12 +27,6 @@
          {0.f, 0.f, 0.f, __f}}
 #define MAT4_IDENTITY MAT4_DIAG(1.0f)
 #define VEC3_SAME(__f) (vec3){__f, __f, __f}
-
-#define MAT4_169                                 \
-        {{9.0f/16.0f, 0.f, 0.f, 0.f},            \
-         {0.f, 1.0f, 0.f, 0.f},                  \
-         {0.f, 0.f, 1.0f, 0.f},                  \
-         {0.f, 0.f, 0.f, 1.0f}}
 
 #define min(a,b) ((a)<(b)?(a):(b))
 #define max(a,b) ((a)>(b)?(a):(b))
@@ -75,6 +70,20 @@ typedef union {
 typedef float mat2[2][2];
 typedef float mat3[3][3];
 typedef float mat4[4][4];
+
+inline static float
+random_float()
+{
+        // double for better rounding
+        return (float)((double)rand()/RAND_MAX);
+}
+
+inline static float
+random_float_negative()
+{
+        // double for better rounding
+        return (float)((double)rand()/(RAND_MAX) * 2.0 -1.0);
+}
 
 inline static float
 vec2_len(vec2 vector)

@@ -7,17 +7,20 @@
 #include <assert.h>
 #include <stdio.h>
 #include <stdbool.h>
+
 #ifndef NO_STBI
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #endif
-#include "hs_math.h"
-#include "hs_data.h"
 
 #ifdef WIN32
 #define OEMRESOURCE
 #include <windows.h>
 #endif
+
+#include "hs_math.h"
+#include "hs_data.h"
+
 
 #define hs_loop(game_data, update_func) while(hs_window_up(game_data)) {update_func; hs_end_frame(game_data);}
 
@@ -50,14 +53,18 @@ typedef struct {
 } hs_camera;
 
 typedef struct {
+        vec2 curr, goal;
+} hs_camera2_smooth;
+
+typedef struct {
         float pos[2], tex[2];
 } hs_tex_corner;
 
 typedef hs_tex_corner hs_tex_square[6];
 
 typedef struct {
-        const uint32_t width, height, sub_tex_width_count;
-        const float half_tile_width, sub_tex_width;
+        uint32_t width, height, sub_tex_width, sub_tex_height;
+        const float half_tile_width, half_tile_height;
         hs_shader_program_tex sp;
         hs_tex_square* vertices;
 } hs_tilemap;
@@ -67,12 +74,44 @@ typedef struct {
         GLFWwindow* window;
 } hs_game_data;
 
+typedef struct {
+        vec2 tr, bl;
+} aabb2;
+
+typedef struct {
+        vec2 pos, half_size, frame_velocity;
+        uint32_t flags;
+} entity2_hot;
+
+typedef struct {
+        hs_shader_program_tex* sp;
+        vec2 external_velocity;
+        float base_mov_speed, mov_speed_mul, fire_rate_mul, invisframe_mul;
+        uint16_t max_hp, hp, armour;
+        void* current_room; //TODO: create room struct and stuff
+} entity2_cold;
+
+typedef struct {
+        entity2_hot* hot;
+        entity2_cold cold;
+} entity2;
+
+enum entity2_flags {
+        AABB_STATIC = 1 << 0,
+        AABB_RIGID = 1 << 1,
+        AABB_CHARACTHER = 1 << 2,
+        player = 1 << 3,
+        preblink = 1 << 4,
+        invisiframe = 1 << 5,
+        confusion = 1 << 6,
+        stunned = 1 << 7,
+};
 
 extern void     hs_close(const hs_game_data gd);
 extern int32_t  hs_window_up(const hs_game_data gd);
 extern int32_t  hs_get_key(const hs_game_data gd, const int key);
 extern void     hs_clear(const float r, const  float g, const  float b, const  float a, const GLbitfield mask);
-extern void     hs_enable_vattrib(const uint32_t index, const uint32_t size,
+extern void     hs_vattrib_enable(const uint32_t index, const uint32_t size,
                                   const GLenum type, const uint32_t stride, const size_t pointer);
 extern void      hs_vattrib_enable_float(const uint32_t index, const uint32_t size,
                                          const uint32_t stride, const size_t pointer);
@@ -110,6 +149,21 @@ extern uint32_t hs_tex2d_create_size_info(const char *filename, const GLenum for
                                      int* width, int* height);
 #endif
 
+/* aabb2 */
+extern vec2 hs_aabb2_center(const aabb2 rect);
+extern vec2 hs_aabb2_size(const aabb2 rect);
+extern vec2 hs_aabb2_half_size(const aabb2 rect);
+
+/* Anders Tale Dungeon generation v3 (BSP) */
+// new_rect_index is the index of the last element that has been filled in
+// the array is expected to have one more space available
+extern void hs_bsp_rect_split_in_place_append(aabb2* rects, const uint32_t new_rect_index, const vec2 min_rect_size);
+
+/* Physics */
+extern uint_fast16_t hs_aabb_check_collide(const aabb2 r1, const aabb2 r2);
+extern void hs_aabb_check_and_do_collide(aabb2* r1, aabb2* r2);
+extern void hs_aabb_check_and_do_collide_static(aabb2* r1, aabb2* r2);
+
 /* Camera stuff */
 extern hs_camera hs_init_fps_camera();
 extern void hs_camera_move_front(hs_camera* camera, const float scale);
@@ -133,9 +187,11 @@ extern void hs_tilemap_update_vbo(const hs_tilemap tilemap);
 extern void hs_tilemap_draw(const hs_tilemap tilemap);
 extern void hs_tilemap_free(hs_tilemap* tilemap);
 extern void hs_tilemap_transform(const hs_tilemap tilemap, const mat4 trans);
+extern void hs_tilemap_perspective(const hs_tilemap tilemap, const mat4 perspective);
 
 // vobj may be NULL
 extern void hs_sprite_transform(const hs_shader_program_tex sprite, const mat4 trans);
+extern void hs_sprite_perspective(const hs_shader_program_tex sprite, const mat4 perspective);
 extern hs_shader_program_tex hs_sprite_create(const char* texture, const GLenum colour_channel, hs_vobj* vobj, const hs_game_data gd);
 extern void hs_sprite_draw(const hs_shader_program_tex sp);
 
@@ -170,9 +226,11 @@ hs_uniform_create(const uint32_t program, const char *name)
         return glGetUniformLocation(program, name);
 }
 
+
+// create all the standard 3d transformation matrices in one function for convinence
 inline hs_coord
 hs_uniform_coord_create(const uint32_t program,
-                                        const char* model, const char* view, const char* proj)
+                        const char* model, const char* view, const char* proj)
 {
         return (hs_coord) {
                 .model = glGetUniformLocation(program, model),
@@ -188,7 +246,10 @@ hs_get_key(const hs_game_data gd, const int key)
 }
 
 inline int
-hs_window_up(const hs_game_data gd) {return !glfwWindowShouldClose(gd.window);}
+hs_window_up(const hs_game_data gd)
+{
+        return !glfwWindowShouldClose(gd.window);
+}
 
 inline void
 hs_close(const hs_game_data gd)
@@ -197,7 +258,7 @@ hs_close(const hs_game_data gd)
 }
 
 inline void
-hs_enable_vattrib(const uint32_t index, const uint32_t size,
+hs_vattrib_enable(const uint32_t index, const uint32_t size,
                   const GLenum type, const uint32_t stride, const size_t pointer)
 {
         glVertexAttribPointer(index, size, type, GL_FALSE, stride, (void*)pointer);
@@ -208,7 +269,7 @@ inline void
 hs_vattrib_enable_float(const uint32_t index, const uint32_t size,
                         const uint32_t stride, const size_t pointer)
 {
-        hs_enable_vattrib(index, size, GL_FLOAT, stride * sizeof(float), pointer * sizeof(float));
+        hs_vattrib_enable(index, size, GL_FLOAT, stride * sizeof(float), pointer * sizeof(float));
 }
 
 inline float
@@ -233,7 +294,10 @@ char*
 hs_file_read(const char *file_path)
 {
         FILE *fp = fopen(file_path, "r");
-        assert(fp);
+        if (!fp) {
+                fprintf(stderr, "---error reading file \"%s\"--\n", file_path);
+                assert(fp);
+        }
 
         fseek(fp, 0L, SEEK_END);
         uint32_t readsize = ftell(fp);
@@ -339,6 +403,7 @@ hs_fbo_resize_color_create(const uint32_t width, const uint32_t height, uint32_t
         glGenTextures(1, tex);
         glBindTexture(GL_TEXTURE_2D, *tex);
 
+        // create attached texture
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -464,7 +529,10 @@ hs_tex2d_create(const char *filename, const GLenum format,
 
         int width, height, nr_channels;
         unsigned char* texture_data = stbi_load(filename, &width, &height, &nr_channels, 0);
-        assert(texture_data);
+        if (!texture_data) {
+                fprintf(stderr, "---error loading texture \"%s\"--\n", filename);
+                assert(texture_data);
+        }
         glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, texture_data);
         glGenerateMipmap(GL_TEXTURE_2D);
         stbi_image_free(texture_data);
@@ -487,7 +555,10 @@ hs_create_tex2d_size_info(const char *filename, const GLenum format,
 
         int nr_channels;
         unsigned char* texture_data = stbi_load(filename, width, height, &nr_channels, 0);
-        assert(texture_data);
+        if (!texture_data) {
+                fprintf(stderr, "---error loading texture \"%s\"--\n", filename);
+                assert(texture_data);
+        }
         glTexImage2D(GL_TEXTURE_2D, 0, format, *width, *height, 0, format, GL_UNSIGNED_BYTE, texture_data);
         glGenerateMipmap(GL_TEXTURE_2D);
         stbi_image_free(texture_data);
@@ -504,6 +575,89 @@ hs_init_fps_camera()
                 .front = {0.0f, 0.0f, -1.0f},
                 .yaw = -90.0f
         };
+}
+
+inline vec2
+hs_aabb2_center(const aabb2 rect)
+{
+        return vec2_add(rect.bl, hs_aabb2_half_size(rect));
+}
+
+inline vec2
+hs_aabb2_size(const aabb2 rect)
+{
+        return vec2_sub(rect.tr, rect.bl);
+}
+
+inline vec2
+hs_aabb2_half_size(const aabb2 rect)
+{
+        return vec2_scale(vec2_sub(rect.tr, rect.bl), 0.5f);
+}
+
+inline void
+hs_bsp_rect_split_in_place_append(aabb2* rects, const uint32_t new_rect_index, const vec2 min_rect_size)
+{
+        // this way of checking if the room is too small does not respect very non-square rectangles
+        // that well, but it is fast and Anders Tale does not really use small non-square rooms
+
+        uint32_t rect_index;
+        vec2 half_rect_size;
+        for (uint32_t tries = 0; tries < 7; tries++) {
+                rect_index = rand() % new_rect_index;
+
+                // half rect size instead of size since we are trying to split it
+                half_rect_size = hs_aabb2_half_size(rects[rect_index]);
+                if (min_rect_size.x < half_rect_size.x || min_rect_size.y < half_rect_size.y)
+                        goto random_rect_found;
+        }
+
+        // randomly trying rooms failed,
+        // looping through all rooms to try and find a suitable room
+        for (rect_index = 0; rect_index < new_rect_index; rect_index++) {
+
+                half_rect_size = hs_aabb2_half_size(rects[rect_index]);
+                if (min_rect_size.x < half_rect_size.x || min_rect_size.y < half_rect_size.y)
+                        goto random_rect_found;
+        }
+
+        // uhhhhh so this will be our error message
+        rects[new_rect_index].tr.x = NAN;
+        return;
+
+        random_rect_found:;
+
+        const uint32_t axis = rand() % 2;
+        const float max_split = half_rect_size.xy[axis] - min_rect_size.xy[axis];
+
+        float split = random_float_negative() * max_split;
+        rects[new_rect_index] = rects[rect_index];
+
+        const float rect_center = hs_aabb2_center(rects[axis]).x;
+
+        rects[rect_index].bl.xy[axis] = rect_center - split;
+        rects[new_rect_index].tr.xy[axis] = rect_center + split;
+}
+
+inline uint_fast16_t
+hs_aabb_check_collide(const aabb2 r1, const aabb2 r2)
+{
+        if (r1.tr.y <= r2.bl.y || r2.tr.y <= r1.bl.y ||
+            r1.tr.x <= r2.bl.x || r2.tr.x <= r1.bl.x)
+                return false;
+        return true;
+}
+
+inline void
+hs_aabb_check_and_do_collide(aabb2* r1, aabb2* r2)
+{
+        const aabb2 rect1 = *r1;
+        const aabb2 rect2 = *r2;
+        if (!hs_aabb_check_collide(rect1, rect1)) return;
+
+        const vec2 r1_center = vec2_scale(vec2_sub(rect1.tr, rect1.bl), 2.0f);
+        const vec2 r2_center = vec2_scale(vec2_sub(rect2.tr, rect2.bl), 2.0f);
+        const vec2 diff = {fabs(r1_center.x - r2_center.x), fabs(r1_center.y - r2_center.y)};
 }
 
 inline void
@@ -589,17 +743,18 @@ hs_tilemap_set(hs_tilemap* tilemap, const uint32_t vertex, uint32_t tile)
         // make tiles start at 0 instead of 1
         tile++;
 
-        const float sub_tex_width = tilemap->sub_tex_width;
-        const float xpos = sub_tex_width * (tile % tilemap->sub_tex_width_count);
-        const float ypos = sub_tex_width * ceilf((float)tile / (float)3);
+        const float width = 1.0f/tilemap->sub_tex_width;
+        const float height = 1.0f/tilemap->sub_tex_height;
+        const float xpos = width * (tile % tilemap->sub_tex_width);
+        const float ypos = height * ceilf((float)tile / (float)tilemap->sub_tex_width);
 
         // bottom left
-        tilemap->vertices[vertex][0].tex[0] = xpos - sub_tex_width;
-        tilemap->vertices[vertex][0].tex[1] = ypos - sub_tex_width;
+        tilemap->vertices[vertex][0].tex[0] = xpos - width;
+        tilemap->vertices[vertex][0].tex[1] = ypos - height;
 
         // bottom right
         tilemap->vertices[vertex][1].tex[0] = xpos;
-        tilemap->vertices[vertex][1].tex[1] = ypos - sub_tex_width;
+        tilemap->vertices[vertex][1].tex[1] = ypos - height;
 
         // top right
         tilemap->vertices[vertex][2].tex[0] = xpos;
@@ -610,12 +765,12 @@ hs_tilemap_set(hs_tilemap* tilemap, const uint32_t vertex, uint32_t tile)
         tilemap->vertices[vertex][3].tex[1] = ypos;
 
         // top left
-        tilemap->vertices[vertex][4].tex[0] = xpos - sub_tex_width;
+        tilemap->vertices[vertex][4].tex[0] = xpos - width;
         tilemap->vertices[vertex][4].tex[1] = ypos;
 
         // bottom left
-        tilemap->vertices[vertex][5].tex[0] = xpos - sub_tex_width;
-        tilemap->vertices[vertex][5].tex[1] = ypos - sub_tex_width;
+        tilemap->vertices[vertex][5].tex[0] = xpos - width;
+        tilemap->vertices[vertex][5].tex[1] = ypos - height;
 }
 
 inline void
@@ -630,52 +785,55 @@ hs_tilemap_sizeof(const hs_tilemap tilemap)
         return sizeof(hs_tex_square) * tilemap.width * tilemap.height;
 }
 
+// expects width, height, sub_tex and half_tile to be filled out
 void
 hs_tilemap_init(hs_tilemap* tilemap, const char* texture, const GLenum colour_channel,
                 const uint32_t default_tex, hs_vobj* vobj)
 {
-        assert(tilemap->width);
-        assert(tilemap->height);
-
         tilemap->vertices = malloc(hs_tilemap_sizeof(*tilemap));
         assert(tilemap->vertices);
 
-        vec2 offset = {-(float)tilemap->width * tilemap->half_tile_width + tilemap->half_tile_width,
-                (float)tilemap->height * tilemap->half_tile_width - tilemap->half_tile_width};
+        const float offset_x_default = -(float)tilemap->width * tilemap->half_tile_width + tilemap->half_tile_width;
+        vec2 offset = {offset_x_default, (float)tilemap->height * tilemap->half_tile_height - tilemap->half_tile_height};
         uint32_t vertex = 0;
 
         for (uint32_t y = 0; y < tilemap->height; y++) {
-                const float down = offset.y + tilemap->half_tile_width;
-                const float up = offset.y - tilemap->half_tile_width ;
+                const float bottom = offset.y + tilemap->half_tile_height;
+                const float top = offset.y - tilemap->half_tile_height;
 
                 for (uint32_t x = 0; x < tilemap->width; x++) {
                         const float right = offset.x + tilemap->half_tile_width;
                         const float left = offset.x - tilemap->half_tile_width;
 
+                        // triangle one
                         tilemap->vertices[vertex][0].pos[0] = left;
-                        tilemap->vertices[vertex][0].pos[1] = down;
+                        tilemap->vertices[vertex][0].pos[1] = bottom;
 
                         tilemap->vertices[vertex][1].pos[0] = right;
-                        tilemap->vertices[vertex][1].pos[1] = down;
+                        tilemap->vertices[vertex][1].pos[1] = bottom;
 
                         tilemap->vertices[vertex][2].pos[0] = right;
-                        tilemap->vertices[vertex][2].pos[1] = up;
+                        tilemap->vertices[vertex][2].pos[1] = top;
 
+                        // triangle two
                         tilemap->vertices[vertex][3].pos[0] = right;
-                        tilemap->vertices[vertex][3].pos[1] = up;
+                        tilemap->vertices[vertex][3].pos[1] = top;
 
                         tilemap->vertices[vertex][4].pos[0] = left;
-                        tilemap->vertices[vertex][4].pos[1] = up;
+                        tilemap->vertices[vertex][4].pos[1] = top;
 
                         tilemap->vertices[vertex][5].pos[0] = left;
-                        tilemap->vertices[vertex][5].pos[1] = down;
+                        tilemap->vertices[vertex][5].pos[1] = bottom;
 
+                        // set texture data
                         hs_tilemap_set(tilemap, vertex, default_tex);
-                        offset.x += tilemap->half_tile_width * 2;
+
+                        offset.x += tilemap->half_tile_width * 2.0f;
                         vertex++;
                 }
-                offset.x = -(float)tilemap->width * tilemap->half_tile_width + tilemap->half_tile_width;
-                offset.y -= tilemap->half_tile_width * 2;
+
+                offset.x = offset_x_default;
+                offset.y -= tilemap->half_tile_height * 2.0f;
         }
 
         if (!vobj) vobj = hs_vobj_create(castf(tilemap->vertices), hs_tilemap_sizeof(*tilemap), 0, 0, GL_DYNAMIC_DRAW, 1);
@@ -683,8 +841,8 @@ hs_tilemap_init(hs_tilemap* tilemap, const char* texture, const GLenum colour_ch
                 hs_shader_program_create(hs_sp_texture_transform_create(), vobj),
                 hs_tex2d_create(texture, colour_channel, GL_REPEAT, GL_NEAREST, 1), "u_tex");
 
-        // anders tale uses 16/9 ratio, change this or remove it for other games
-        hs_tilemap_transform(*tilemap, (mat4)MAT4_169);
+        hs_tilemap_transform(*tilemap, (mat4)MAT4_IDENTITY);
+        hs_tilemap_perspective(*tilemap, (mat4)MAT4_IDENTITY);
 
         hs_vattrib_enable_float(0, 2, 4, 0);
         hs_vattrib_enable_float(1, 2, 4, 2);
@@ -719,13 +877,21 @@ hs_tilemap_transform(const hs_tilemap tilemap, const mat4 trans)
         glUniformMatrix4fv(0, 1, GL_FALSE, castf(trans));
 }
 
+inline void
+hs_tilemap_perspective(const hs_tilemap tilemap, const mat4 perspective)
+{
+        glUseProgram(tilemap.sp.p);
+        glUniformMatrix4fv(1, 1, GL_FALSE, castf(perspective));
+}
+
 inline hs_shader_program_tex
 hs_sprite_create(const char* texture, const GLenum colour_channel, hs_vobj* vobj, const hs_game_data gd)
 {
 
         int width, height;
         uint32_t tex = hs_create_tex2d_size_info(texture, colour_channel, GL_REPEAT, GL_NEAREST, &width, &height);
-        const float vertices[] = HS_DEFAULT_SQUARE_SCALED_TEX_VERT_ONLY((float)width/(float)gd.width, (float)height/(float)gd.height);
+        const float vertices[] = HS_DEFAULT_SQUARE_SCALED_TEX_VERT_ONLY(
+                (float)width/(float)gd.width, (float)height/(float)gd.height);
 
         if (!vobj) vobj = hs_vobj_create(vertices, sizeof(vertices), 0, 0, GL_STATIC_DRAW, 1);
         const hs_shader_program_tex sp = hs_shader_program_tex_create(
@@ -735,6 +901,7 @@ hs_sprite_create(const char* texture, const GLenum colour_channel, hs_vobj* vobj
         hs_vattrib_enable_float(1, 2, 4, 2);
 
         hs_sprite_transform(sp, (mat4)MAT4_IDENTITY);
+        hs_sprite_perspective(sp, (mat4)MAT4_IDENTITY);
 
         return sp;
 }
@@ -744,6 +911,13 @@ hs_sprite_transform(const hs_shader_program_tex sprite, const mat4 trans)
 {
         glUseProgram(sprite.p);
         glUniformMatrix4fv(0, 1, GL_FALSE, castf(trans));
+}
+
+inline void
+hs_sprite_perspective(const hs_shader_program_tex sprite, const mat4 perspective)
+{
+        glUseProgram(sprite.p);
+        glUniformMatrix4fv(1, 1, GL_FALSE, castf(perspective));
 }
 
 inline void
@@ -776,8 +950,7 @@ hs_vbo_create(const float *vbuff, const uint32_t buffsize, const GLenum usage, c
 inline uint32_t
 hs_ebo_create(const uint32_t *ibuff, const uint32_t buffsize, const GLenum usage, const uint32_t count)
 {
-        if(!buffsize)
-                return 0;
+        if(!buffsize) return 0;
         uint32_t ebo;
         glGenBuffers(1, &ebo);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
@@ -820,27 +993,49 @@ hs_disable_vsync()
         glfwSwapInterval(0);
 }
 
+enum hs_init_flags {
+        HS_NO_VSYNC = 1 << 0,
+        HS_WIREFRAME_MODE = 1 << 1,
+        HS_BLEND_MODE = 1 << 2,
+        HS_DEPTH_TESTING = 1 << 3,
+};
+
 inline static hs_game_data
-hs_init(const uint32_t width, const uint32_t height, const char *name)
+hs_init(hs_game_data* gd, const char *name, void(*framebuffer_size_callback)(GLFWwindow*, int, int), const uint32_t flags)
 {
         glfwInit();
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
         glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-        GLFWwindow* window= glfwCreateWindow(width, height, name, NULL, NULL);
+        if (!gd->width) gd->width = 800;
+        if (!gd->height) gd->height = 600;
+
+        GLFWwindow* window = glfwCreateWindow(gd->width, gd->height, name, NULL, NULL);
         assert(window);
 
         glfwMakeContextCurrent(window);
         assert(gladLoadGLLoader((GLADloadproc)glfwGetProcAddress));
+        glViewport(0, 0, gd->width, gd->height);
 
-        glViewport(0, 0, width, height);
+        if (flags & HS_BLEND_MODE) {
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        }
+        if (flags & HS_WIREFRAME_MODE) {
+                glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+        }
+        if (flags & HS_NO_VSYNC) {
+                hs_disable_vsync();
+        }
+        if (flags & HS_DEPTH_TESTING) {
+                glEnable(GL_DEPTH_TEST);
+        }
+        if (framebuffer_size_callback) {
+                glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+        }
 
-        return (hs_game_data) {
-                .width = width,
-                .height = height,
-                .window = window,
-        };
+        gd->window = window;
 }
 
 inline static void

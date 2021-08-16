@@ -101,9 +101,10 @@ static const char* texture_transform_vert =
         "layout (location = 1) in vec2 aTexCoord;\n"
         "out vec2 TexCoord;\n"
         "uniform mat4 u_transform;\n"
+        "uniform mat4 u_perspective;\n"
         "void main()\n"
         "{\n"
-        "gl_Position = u_transform * vec4(aPos, 0.0f, 1.0);\n"
+        "gl_Position = u_transform * u_perspective * vec4(aPos, 0.0f, 1.0);\n"
         "TexCoord = vec2(aTexCoord.x, aTexCoord.y);\n"
         "}";
 

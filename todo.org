@@ -1,0 +1,17 @@
+#+AUTHOR: Halvard Samdal
+
+* Collision system for aabb
+- items should be pushed by entities
+- I was going to say entities should stop each other, but nah entities just can't collide (problem fixed)
+- Pillars and objects in the world should stop entities from exiting them
+- I also want to add a "reverse" collision so that instead of making 4 walls around a room,
+  you just say that stuff should be inside the boundry of all the rooms and corridors
+* Dungeongeneration v3
+Plan is to use BSP (Binary Space Partitioning),
+should way simpler and faster, but we will have to see on game feel.
+* Smooth camera
+simply add a "current" pos and a "goal" pos and then each frame move towards goal pos
+for a non-linear experience make the speed of the camera scale with something
+change shaders to have perspective translation as well
+* Upscale with combo shader instead of just nearest
+https://colececil.io/blog/2017/scaling-pixel-art-without-destroying-it/
