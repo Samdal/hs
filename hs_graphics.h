@@ -79,6 +79,10 @@ typedef struct {
 } aabb2;
 
 typedef struct {
+        vec2i tr, bl;
+} aabb2i;
+
+typedef struct {
         vec2 pos, half_size, frame_velocity;
         uint32_t flags;
 } entity2_hot;
@@ -150,14 +154,14 @@ extern uint32_t hs_tex2d_create_size_info(const char *filename, const GLenum for
 #endif
 
 /* aabb2 */
-extern vec2 hs_aabb2_center(const aabb2 rect);
-extern vec2 hs_aabb2_size(const aabb2 rect);
-extern vec2 hs_aabb2_half_size(const aabb2 rect);
+extern vec2  hs_aabb2_center(const aabb2 rect);
+extern vec2i hs_aabb2i_center(const aabb2i rect);
+extern vec2  hs_aabb2_size(const aabb2 rect);
+extern vec2  hs_aabb2_half_size(const aabb2 rect);
+extern vec2i hs_aabb2i_half_size(const aabb2i rect);
 
 /* Anders Tale Dungeon generation v3 (BSP) */
-// new_rect_index is the index of the last element that has been filled in
-// the array is expected to have one more space available
-extern void hs_bsp_rect_split_in_place_append(aabb2* rects, const uint32_t new_rect_index, const vec2 min_rect_size);
+extern void hs_bsp_recti_split_in_place_append(aabb2i* rects, const uint32_t new_rect_index, const vec2i min_rect_size);
 
 /* Physics */
 extern uint_fast16_t hs_aabb_check_collide(const aabb2 r1, const aabb2 r2);
@@ -180,7 +184,8 @@ extern void hs_camera_update_front(hs_camera* camera);
 extern void hs_tilemap_set(hs_tilemap* tilemap, const uint32_t vertex, uint32_t tile);
 extern void hs_tilemap_set_xy(hs_tilemap* tilemap, const uint32_t x, const uint32_t y, uint32_t tile);
 extern uint32_t hs_tilemap_sizeof(const hs_tilemap tilemap);
-// vobj may be NULL
+// if vobj is NULL a new vobj will be created
+// expects width, height, sub_tex and half_tile to be filled out
 extern void hs_tilemap_init(hs_tilemap* tilemap, const char* texture, const GLenum colour_channel,
                             const uint32_t default_tex, hs_vobj* vobj);
 extern void hs_tilemap_update_vbo(const hs_tilemap tilemap);
@@ -189,7 +194,7 @@ extern void hs_tilemap_free(hs_tilemap* tilemap);
 extern void hs_tilemap_transform(const hs_tilemap tilemap, const mat4 trans);
 extern void hs_tilemap_perspective(const hs_tilemap tilemap, const mat4 perspective);
 
-// vobj may be NULL
+// if vobj is NULL a new vobj will be created
 extern void hs_sprite_transform(const hs_shader_program_tex sprite, const mat4 trans);
 extern void hs_sprite_perspective(const hs_shader_program_tex sprite, const mat4 perspective);
 extern hs_shader_program_tex hs_sprite_create(const char* texture, const GLenum colour_channel, hs_vobj* vobj, const hs_game_data gd);
@@ -226,8 +231,6 @@ hs_uniform_create(const uint32_t program, const char *name)
         return glGetUniformLocation(program, name);
 }
 
-
-// create all the standard 3d transformation matrices in one function for convinence
 inline hs_coord
 hs_uniform_coord_create(const uint32_t program,
                         const char* model, const char* view, const char* proj)
@@ -293,23 +296,23 @@ hs_sp_use(const hs_shader_program sp)
 char*
 hs_file_read(const char *file_path)
 {
-        FILE *fp = fopen(file_path, "r");
-        if (!fp) {
+        FILE *file = fopen(file_path, "r");
+        if (!file) {
                 fprintf(stderr, "---error reading file \"%s\"--\n", file_path);
-                assert(fp);
+                assert(file);
         }
 
-        fseek(fp, 0L, SEEK_END);
-        uint32_t readsize = ftell(fp);
-        rewind(fp);
+        fseek(file, 0L, SEEK_END);
+        uint32_t readsize = ftell(file);
+        rewind(file);
 
         char *buffer = malloc(readsize);
         assert(buffer);
 
-        fread(buffer, 1, readsize, fp);
+        fread(buffer, 1, readsize, file);
         buffer[readsize] = '\0';
 
-        fclose(fp);
+        fclose(file);
         return buffer;
 }
 
@@ -583,6 +586,12 @@ hs_aabb2_center(const aabb2 rect)
         return vec2_add(rect.bl, hs_aabb2_half_size(rect));
 }
 
+inline vec2i
+hs_aabb2i_center(const aabb2i rect)
+{
+        return vec2i_add(rect.bl, hs_aabb2i_half_size(rect));
+}
+
 inline vec2
 hs_aabb2_size(const aabb2 rect)
 {
@@ -595,19 +604,25 @@ hs_aabb2_half_size(const aabb2 rect)
         return vec2_scale(vec2_sub(rect.tr, rect.bl), 0.5f);
 }
 
+inline vec2i
+hs_aabb2i_half_size(const aabb2i rect)
+{
+        return vec2i_div(vec2i_sub(rect.tr, rect.bl), 2);
+}
+
 inline void
-hs_bsp_rect_split_in_place_append(aabb2* rects, const uint32_t new_rect_index, const vec2 min_rect_size)
+hs_bsp_recti_split_in_place_append(aabb2i* rects, const uint32_t new_rect_index, const vec2i min_rect_size)
 {
         // this way of checking if the room is too small does not respect very non-square rectangles
-        // that well, but it is fast and Anders Tale does not really use small non-square rooms
+        // TOOD: maybe change this^
 
         uint32_t rect_index;
-        vec2 half_rect_size;
+        vec2i half_rect_size;
         for (uint32_t tries = 0; tries < 7; tries++) {
                 rect_index = rand() % new_rect_index;
 
                 // half rect size instead of size since we are trying to split it
-                half_rect_size = hs_aabb2_half_size(rects[rect_index]);
+                half_rect_size = hs_aabb2i_half_size(rects[rect_index]);
                 if (min_rect_size.x < half_rect_size.x || min_rect_size.y < half_rect_size.y)
                         goto random_rect_found;
         }
@@ -616,24 +631,27 @@ hs_bsp_rect_split_in_place_append(aabb2* rects, const uint32_t new_rect_index, c
         // looping through all rooms to try and find a suitable room
         for (rect_index = 0; rect_index < new_rect_index; rect_index++) {
 
-                half_rect_size = hs_aabb2_half_size(rects[rect_index]);
+                half_rect_size = hs_aabb2i_half_size(rects[rect_index]);
                 if (min_rect_size.x < half_rect_size.x || min_rect_size.y < half_rect_size.y)
                         goto random_rect_found;
         }
 
         // uhhhhh so this will be our error message
-        rects[new_rect_index].tr.x = NAN;
+        rects[0].tr.x = 0;
         return;
 
         random_rect_found:;
 
-        const uint32_t axis = rand() % 2;
-        const float max_split = half_rect_size.xy[axis] - min_rect_size.xy[axis];
-
-        float split = random_float_negative() * max_split;
         rects[new_rect_index] = rects[rect_index];
 
-        const float rect_center = hs_aabb2_center(rects[axis]).x;
+        const uint32_t axis = rand() % 2;
+
+        const int32_t max_split = half_rect_size.xy[axis] - min_rect_size.xy[axis];
+        const int32_t split = (rand() % (max_split * 2)) - max_split;
+
+        printf("split: %d %d\n", split, max_split);
+
+        const int32_t rect_center = hs_aabb2i_center(rects[axis]).x;
 
         rects[rect_index].bl.xy[axis] = rect_center - split;
         rects[new_rect_index].tr.xy[axis] = rect_center + split;
@@ -785,7 +803,6 @@ hs_tilemap_sizeof(const hs_tilemap tilemap)
         return sizeof(hs_tex_square) * tilemap.width * tilemap.height;
 }
 
-// expects width, height, sub_tex and half_tile to be filled out
 void
 hs_tilemap_init(hs_tilemap* tilemap, const char* texture, const GLenum colour_channel,
                 const uint32_t default_tex, hs_vobj* vobj)
@@ -794,7 +811,7 @@ hs_tilemap_init(hs_tilemap* tilemap, const char* texture, const GLenum colour_ch
         assert(tilemap->vertices);
 
         const float offset_x_default = -(float)tilemap->width * tilemap->half_tile_width + tilemap->half_tile_width;
-        vec2 offset = {offset_x_default, (float)tilemap->height * tilemap->half_tile_height - tilemap->half_tile_height};
+        vec2 offset = {offset_x_default, -(float)tilemap->height * tilemap->half_tile_height + tilemap->half_tile_height};
         uint32_t vertex = 0;
 
         for (uint32_t y = 0; y < tilemap->height; y++) {
@@ -833,7 +850,7 @@ hs_tilemap_init(hs_tilemap* tilemap, const char* texture, const GLenum colour_ch
                 }
 
                 offset.x = offset_x_default;
-                offset.y -= tilemap->half_tile_height * 2.0f;
+                offset.y += tilemap->half_tile_height * 2.0f;
         }
 
         if (!vobj) vobj = hs_vobj_create(castf(tilemap->vertices), hs_tilemap_sizeof(*tilemap), 0, 0, GL_DYNAMIC_DRAW, 1);

@@ -45,6 +45,14 @@ typedef union {
 
 typedef union {
         struct {
+                int32_t x, y;
+        };
+        int32_t axis[2];
+        int32_t xy[2];
+} vec2i;
+
+typedef union {
+        struct {
                 float x, y, z;
         };
         struct {
@@ -124,11 +132,41 @@ vec2_scale(const vec2 vector, const float scalar)
         };
 }
 
+inline static vec2i
+vec2i_scale(const vec2i vector, const int32_t scalar)
+{
+        return (vec2i){
+                vector.x * scalar,
+                vector.y * scalar,
+        };
+}
+
 inline static vec2
 vec2_norm(const vec2 vector)
 {
         float len = vec2_len(vector);
         return len == 0.0f ? vector : vec2_scale(vector, 1.0f / len);
+}
+
+inline static vec2i
+vec2i_div(const vec2i vector, const int32_t divisor)
+{
+        return (vec2i){
+                vector.x / divisor,
+                vector.y / divisor,
+        };
+}
+
+inline static vec2i
+vec2i_add(const vec2i v1, const vec2i v2)
+{
+        return (vec2i){v1.x + v2.x, v1.y + v2.y};
+}
+
+inline static vec2i
+vec2i_sub(const vec2i v1, const vec2i v2)
+{
+        return (vec2i){v1.x - v2.x, v1.y - v2.y};
 }
 
 inline static float
