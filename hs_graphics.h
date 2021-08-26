@@ -1,8 +1,8 @@
 #ifndef HS_GRAPHICS_H_
 #define HS_GRAPHICS_H_
 
-#include "glad/glad.h"
-#include "glfw/glfw3.h"
+#include "external/glad/glad.h"
+#include "external/glfw/glfw3.h"
 #include <stdlib.h>
 #include <assert.h>
 #include <stdio.h>
@@ -10,12 +10,27 @@
 
 #ifndef NO_STBI
 #define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
+#include "external/stb_image.h"
 #endif
 
 #ifdef WIN32
 #define OEMRESOURCE
 #include <windows.h>
+#endif
+
+#ifdef HS_NUKLEAR
+#define NK_INCLUDE_FIXED_TYPES
+#define NK_INCLUDE_STANDARD_IO
+#define NK_INCLUDE_STANDARD_VARARGS
+#define NK_INCLUDE_DEFAULT_ALLOCATOR
+#define NK_INCLUDE_VERTEX_BUFFER_OUTPUT
+#define NK_INCLUDE_FONT_BAKING
+#define NK_INCLUDE_DEFAULT_FONT
+#define NK_IMPLEMENTATION
+#define NK_GLFW_GL3_IMPLEMENTATION
+#define NK_KEYSTATE_BASED_INPUT
+#include "external/nuklear/nuklear.h"
+#include "external/nuklear_glfw_gl3.h"
 #endif
 
 #include "hs_math.h"
@@ -164,7 +179,7 @@ extern vec2i hs_aabb2i_half_size(const aabb2i rect);
 extern void hs_bsp_recti_split_in_place_append(aabb2i* rects, const uint32_t new_rect_index, const vec2i min_rect_size);
 
 /* Physics */
-extern uint_fast16_t hs_aabb_check_collide(const aabb2 r1, const aabb2 r2);
+extern uint32_t hs_aabb_check_collide(const aabb2 r1, const aabb2 r2);
 extern void hs_aabb_check_and_do_collide(aabb2* r1, aabb2* r2);
 extern void hs_aabb_check_and_do_collide_static(aabb2* r1, aabb2* r2);
 
@@ -214,9 +229,9 @@ extern void hs_fps_callback_init(const hs_game_data gd, void(*mouse_callback)(GL
 #ifdef HS_IMPL
 
 #define GLAD_IMPL
-#include "glad/glad_impl.h"
+#include "external/glad/glad_impl.h"
 #define GLFW_IMPL
-#include "glfw/glfw_impl.h"
+#include "external/glfw/glfw_impl.h"
 
 inline void
 hs_clear(const float r, const  float g, const  float b, const  float a, const GLbitfield mask)
@@ -623,7 +638,7 @@ hs_bsp_recti_split_in_place_append(aabb2i* rects, const uint32_t new_rect_index,
 
                 // half rect size instead of size since we are trying to split it
                 half_rect_size = hs_aabb2i_half_size(rects[rect_index]);
-                if (min_rect_size.x < half_rect_size.x || min_rect_size.y < half_rect_size.y)
+                if (min_rect_size.x <= half_rect_size.x && min_rect_size.y <= half_rect_size.y)
                         goto random_rect_found;
         }
 
@@ -632,32 +647,32 @@ hs_bsp_recti_split_in_place_append(aabb2i* rects, const uint32_t new_rect_index,
         for (rect_index = 0; rect_index < new_rect_index; rect_index++) {
 
                 half_rect_size = hs_aabb2i_half_size(rects[rect_index]);
-                if (min_rect_size.x < half_rect_size.x || min_rect_size.y < half_rect_size.y)
+                if (min_rect_size.x <= half_rect_size.x && min_rect_size.y <= half_rect_size.y)
                         goto random_rect_found;
         }
 
-        // uhhhhh so this will be our error message
+        // uhhhhh so this will be our error message, TODO: handle errors propperly
         rects[0].tr.x = 0;
         return;
 
-        random_rect_found:;
+        random_rect_found:
 
         rects[new_rect_index] = rects[rect_index];
 
-        const uint32_t axis = rand() % 2;
+        // TODO maybe add some randomness to this
+        const uint32_t axis = half_rect_size.x >= half_rect_size.y ? 0 : 1;
 
         const int32_t max_split = half_rect_size.xy[axis] - min_rect_size.xy[axis];
-        const int32_t split = (rand() % (max_split * 2)) - max_split;
+        int32_t split = (rand() % (max_split * 2)) - max_split;
+        split = 0;
 
-        printf("split: %d %d\n", split, max_split);
-
-        const int32_t rect_center = hs_aabb2i_center(rects[axis]).x;
+        const int32_t rect_center = hs_aabb2i_center(rects[rect_index]).xy[axis];
 
         rects[rect_index].bl.xy[axis] = rect_center - split;
-        rects[new_rect_index].tr.xy[axis] = rect_center + split;
+        rects[new_rect_index].tr.xy[axis] = rect_center + split - 1;
 }
 
-inline uint_fast16_t
+inline uint32_t
 hs_aabb_check_collide(const aabb2 r1, const aabb2 r2)
 {
         if (r1.tr.y <= r2.bl.y || r2.tr.y <= r1.bl.y ||
