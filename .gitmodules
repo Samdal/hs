@@ -1,3 +1,6 @@
 [submodule "external/nuklear"]
 	path = external/nuklear
 	url = https://github.com/Immediate-Mode-UI/Nuklear
+[submodule "external/sfd"]
+	path = external/sfd
+	url = https://github.com/rxi/sfd

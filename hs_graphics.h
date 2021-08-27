@@ -33,6 +33,10 @@
 #include "external/nuklear_glfw_gl3.h"
 #endif
 
+#ifdef HS_SFD
+#include "external/sfd/src/sfd.c"
+#endif
+
 #include "hs_math.h"
 #include "hs_data.h"
 
