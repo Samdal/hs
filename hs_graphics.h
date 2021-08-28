@@ -40,8 +40,7 @@
 #include "hs_math.h"
 #include "hs_data.h"
 
-
-#define hs_loop(game_data, update_func) while(hs_window_up(game_data)) {update_func; hs_end_frame(game_data);}
+#define hs_key_init(glfw_key) &(hs_key){.key = glfw_key}
 
 typedef struct {
         uint32_t count, vbo, vao, ebo;
@@ -130,9 +129,22 @@ enum entity2_flags {
         stunned = 1 << 7,
 };
 
+enum hs_key_state {
+        HS_KEY_UP,
+        HS_KEY_RELEASED,
+        HS_KEY_PRESSED,
+        HS_KEY_DOWN,
+};
+
+typedef struct {
+        const int key;
+        int previous_state;
+} hs_key;
+
 extern void     hs_close(const hs_game_data gd);
 extern int32_t  hs_window_up(const hs_game_data gd);
-extern int32_t  hs_get_key(const hs_game_data gd, const int key);
+extern enum hs_key_state hs_get_key_toggle(const hs_game_data gd, hs_key* key);
+extern enum hs_key_state hs_get_key_held(const hs_game_data gd, const int key);
 extern void     hs_clear(const float r, const  float g, const  float b, const  float a, const GLbitfield mask);
 extern void     hs_vattrib_enable(const uint32_t index, const uint32_t size,
                                   const GLenum type, const uint32_t stride, const size_t pointer);
@@ -213,11 +225,18 @@ extern void hs_tilemap_free(hs_tilemap* tilemap);
 extern void hs_tilemap_transform(const hs_tilemap tilemap, const mat4 trans);
 extern void hs_tilemap_perspective(const hs_tilemap tilemap, const mat4 perspective);
 
+/* Sprite stuff */
+
 // if vobj is NULL a new vobj will be created
 extern void hs_sprite_transform(const hs_shader_program_tex sprite, const mat4 trans);
 extern void hs_sprite_perspective(const hs_shader_program_tex sprite, const mat4 perspective);
 extern hs_shader_program_tex hs_sprite_create(const char* texture, const GLenum colour_channel, hs_vobj* vobj, const hs_game_data gd);
 extern void hs_sprite_draw(const hs_shader_program_tex sp);
+
+/* Nuklear */
+
+extern struct nk_image hs_nk_image_load(const char *filename);
+extern struct nk_image hs_nk_image_load_size_info(const char *filename, int* width, int* height);
 
 extern uint32_t hs_create_vao(const uint32_t  count);
 extern uint32_t hs_vbo_create(const float    *vbuff, const uint32_t buffsize,
@@ -236,6 +255,8 @@ extern void hs_fps_callback_init(const hs_game_data gd, void(*mouse_callback)(GL
 #include "external/glad/glad_impl.h"
 #define GLFW_IMPL
 #include "external/glfw/glfw_impl.h"
+
+#define hs_loop(game_data, update_func) while(hs_window_up(game_data)) {hs_poll_input(); update_func; hs_end_frame(game_data);}
 
 inline void
 hs_clear(const float r, const  float g, const  float b, const  float a, const GLbitfield mask)
@@ -261,10 +282,28 @@ hs_uniform_coord_create(const uint32_t program,
         };
 }
 
-inline int
-hs_get_key(const hs_game_data gd, const int key)
+inline enum hs_key_state
+hs_get_key_toggle(const hs_game_data gd, hs_key* key)
 {
-        return glfwGetKey(gd.window, key);
+        const int state = glfwGetKey(gd.window, key->key);
+        const int previous_state = key->previous_state;
+        key->previous_state = state;
+
+        if (previous_state != state) {
+                if (state == GLFW_PRESS) return HS_KEY_PRESSED;
+                else                     return HS_KEY_RELEASED;
+        }
+
+        return HS_KEY_UP;
+}
+
+inline enum hs_key_state
+hs_get_key_held(const hs_game_data gd, const int key)
+{
+        const int state = glfwGetKey(gd.window, key);
+        if (state == GLFW_PRESS)
+                return HS_KEY_DOWN;
+        return HS_KEY_UP;
 }
 
 inline int
@@ -416,7 +455,7 @@ hs_sp_create_from_file(const char *v_file, const char *f_file)
 }
 
 inline uint32_t
-hs_fbo_resize_color_create(const uint32_t width, const uint32_t height, uint32_t* tex)
+hs_fbo_color_create(const uint32_t width, const uint32_t height, uint32_t* tex)
 {
         uint32_t fbo;
         glGenFramebuffers(1, &fbo);
@@ -964,6 +1003,56 @@ hs_sprite_draw(const hs_shader_program_tex sp)
         glDrawArrays(GL_TRIANGLES, 0, 6);
 }
 
+struct nk_image
+hs_nk_image_load(const char *filename)
+{
+    int width, height, nr_channels;
+    unsigned char* texture_data = stbi_load(filename, &width, &height, &nr_channels, 0);
+    if (!texture_data) {
+            fprintf(stderr, "---error loading texture \"%s\"--\n", filename);
+            assert(texture_data);
+    }
+
+    GLuint tex;
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, texture_data);
+    glGenerateMipmap(GL_TEXTURE_2D);
+
+    stbi_image_free(texture_data);
+
+    return  nk_image_id((int)tex);
+}
+
+struct nk_image
+hs_nk_image_load_size_info(const char *filename, int* width, int* height)
+{
+    int nr_channels;
+    unsigned char* texture_data = stbi_load(filename, width, height, &nr_channels, 0);
+    if (!texture_data) {
+            fprintf(stderr, "---error loading texture \"%s\"--\n", filename);
+            assert(texture_data);
+    }
+
+    GLuint tex;
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, *width, *height, 0, GL_RGBA, GL_UNSIGNED_BYTE, texture_data);
+    glGenerateMipmap(GL_TEXTURE_2D);
+
+    stbi_image_free(texture_data);
+
+    return  nk_image_id((int)tex);
+}
+
 inline uint32_t
 hs_create_vao(const uint32_t count)
 {
@@ -1075,10 +1164,15 @@ hs_init(hs_game_data* gd, const char *name, void(*framebuffer_size_callback)(GLF
 }
 
 inline static void
+hs_poll_input()
+{
+        glfwPollEvents();
+}
+
+inline static void
 hs_end_frame(const hs_game_data gd)
 {
         glfwSwapBuffers(gd.window);
-        glfwPollEvents();
 }
 
 inline static void
