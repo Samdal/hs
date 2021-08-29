@@ -81,8 +81,8 @@ typedef struct {
 typedef hs_tex_corner hs_tex_square[6];
 
 typedef struct {
-        uint32_t width, height, sub_tex_width, sub_tex_height;
-        const float half_tile_width, half_tile_height;
+        uint32_t width, height, tileset_width, tileset_height;
+        float tile_width, tile_height;
         hs_shader_program_tex sp;
         hs_tex_square* vertices;
 } hs_tilemap;
@@ -177,8 +177,10 @@ extern void     hs_tex_uniform_set(const hs_tex tex, const uint32_t val);
 extern void     hs_tex2d_activate(const uint32_t texture_object, const GLenum texindex);
 #ifndef NO_STBI
 extern uint32_t hs_tex2d_create(const char *filename, const GLenum format,
-                                     const GLenum  wrap, const GLenum filter,
-                                     const uint32_t count);
+                                     const GLenum  wrap, const GLenum filter);
+extern uint32_t hs_tex2d_create_pixel(const char *filename, const GLenum format);
+extern uint32_t hs_tex2d_create_size_info_pixel(const char *filename, const GLenum format,
+                                                int* width, int* height);
 extern uint32_t hs_tex2d_create_size_info(const char *filename, const GLenum format,
                                      const GLenum  wrap, const GLenum filter,
                                      int* width, int* height);
@@ -217,8 +219,7 @@ extern void hs_tilemap_set_xy(hs_tilemap* tilemap, const uint32_t x, const uint3
 extern uint32_t hs_tilemap_sizeof(const hs_tilemap tilemap);
 // if vobj is NULL a new vobj will be created
 // expects width, height, sub_tex and half_tile to be filled out
-extern void hs_tilemap_init(hs_tilemap* tilemap, const char* texture, const GLenum colour_channel,
-                            const uint32_t default_tex, hs_vobj* vobj);
+extern void hs_tilemap_init(hs_tilemap* tilemap, uint32_t texture, const uint32_t default_tex);
 extern void hs_tilemap_update_vbo(const hs_tilemap tilemap);
 extern void hs_tilemap_draw(const hs_tilemap tilemap);
 extern void hs_tilemap_free(hs_tilemap* tilemap);
@@ -234,11 +235,12 @@ extern hs_shader_program_tex hs_sprite_create(const char* texture, const GLenum 
 extern void hs_sprite_draw(const hs_shader_program_tex sp);
 
 /* Nuklear */
-
+#ifndef NO_STBI
 extern struct nk_image hs_nk_image_load(const char *filename);
 extern struct nk_image hs_nk_image_load_size_info(const char *filename, int* width, int* height);
+#endif
 
-extern uint32_t hs_create_vao(const uint32_t  count);
+extern uint32_t hs_vao_create(const uint32_t  count);
 extern uint32_t hs_vbo_create(const float    *vbuff, const uint32_t buffsize,
                               const GLenum    usage, const uint32_t count);
 extern uint32_t hs_ebo_create(const uint32_t *ibuff, const uint32_t buffsize,
@@ -246,7 +248,8 @@ extern uint32_t hs_ebo_create(const uint32_t *ibuff, const uint32_t buffsize,
 extern hs_vobj* hs_vobj_create(const float    *vbuff, const uint32_t vbuffsize,
                               const uint32_t *ibuff, const uint32_t ibuffsize,
                               const GLenum    usage, const uint32_t count);
-extern void hs_vobj_delete(hs_vobj* vobj);
+// Expects vobj to be heap allocated
+extern void hs_vobj_free(hs_vobj* vobj);
 extern void hs_fps_callback_init(const hs_game_data gd, void(*mouse_callback)(GLFWwindow*, double xpos, double ypos));
 
 #ifdef HS_IMPL
@@ -513,14 +516,14 @@ inline void
 hs_sp_delete(hs_shader_program sp)
 {
         glDeleteProgram(sp.p);
-        hs_vobj_delete(sp.vobj);
+        hs_vobj_free(sp.vobj);
 }
 
 inline void
 hs_sp_tex_delete(hs_shader_program_tex sp)
 {
         glDeleteProgram(sp.p);
-        hs_vobj_delete(sp.vobj);
+        hs_vobj_free(sp.vobj);
         glDeleteTextures(1, &sp.tex.tex_unit);
 }
 
@@ -576,11 +579,10 @@ hs_tex2d_activate(const uint32_t texture_object, const GLenum texindex)
 #ifndef NO_STBI
 uint32_t
 hs_tex2d_create(const char *filename, const GLenum format,
-                const GLenum wrap, const GLenum filter,
-                const uint32_t count)
+                const GLenum wrap, const GLenum filter)
 {
         uint32_t tex;
-        glGenTextures(count, &tex);
+        glGenTextures(1, &tex);
         glBindTexture(GL_TEXTURE_2D, tex);
 
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap);
@@ -600,8 +602,21 @@ hs_tex2d_create(const char *filename, const GLenum format,
 
         return tex;
 }
+
+inline uint32_t
+hs_tex2d_create_pixel(const char *filename, const GLenum format)
+{
+        return hs_tex2d_create(filename, format, GL_CLAMP_TO_EDGE, GL_NEAREST);
+}
+
+inline uint32_t
+hs_tex2d_create_size_info_pixel(const char *filename, const GLenum format, int* width, int* height)
+{
+        return hs_tex2d_create_size_info(filename, format, GL_CLAMP_TO_EDGE, GL_NEAREST, width, height);
+}
+
 uint32_t
-hs_create_tex2d_size_info(const char *filename, const GLenum format,
+hs_tex2d_create_size_info(const char *filename, const GLenum format,
                           const GLenum  wrap, const GLenum filter,
                           int* width, int* height)
 {
@@ -819,10 +834,10 @@ hs_tilemap_set(hs_tilemap* tilemap, const uint32_t vertex, uint32_t tile)
         // make tiles start at 0 instead of 1
         tile++;
 
-        const float width = 1.0f/tilemap->sub_tex_width;
-        const float height = 1.0f/tilemap->sub_tex_height;
-        const float xpos = width * (tile % tilemap->sub_tex_width);
-        const float ypos = height * ceilf((float)tile / (float)tilemap->sub_tex_width);
+        const float width = 1.0f/tilemap->tileset_width;
+        const float height = 1.0f/tilemap->tileset_height;
+        const float xpos = width * (tile % tilemap->tileset_width);
+        const float ypos = height * ceilf((float)tile / (float)tilemap->tileset_width);
 
         // bottom left
         tilemap->vertices[vertex][0].tex[0] = xpos - width;
@@ -862,23 +877,34 @@ hs_tilemap_sizeof(const hs_tilemap tilemap)
 }
 
 void
-hs_tilemap_init(hs_tilemap* tilemap, const char* texture, const GLenum colour_channel,
-                const uint32_t default_tex, hs_vobj* vobj)
+hs_tilemap_init(hs_tilemap* tilemap, uint32_t texture, const uint32_t default_tex)
 {
+        assert(tilemap->width);
+        assert(tilemap->height);
+        assert(tilemap->tileset_width);
+        assert(tilemap->tileset_height);
+        assert(tilemap->tile_width > 0.0f);
+        assert(tilemap->tile_height > 0.0f);
+
+        if (tilemap->vertices) {
+                free(tilemap->vertices);
+                tilemap->vertices = NULL;
+        }
+
         tilemap->vertices = malloc(hs_tilemap_sizeof(*tilemap));
         assert(tilemap->vertices);
 
-        const float offset_x_default = -(float)tilemap->width * tilemap->half_tile_width + tilemap->half_tile_width;
-        vec2 offset = {offset_x_default, -(float)tilemap->height * tilemap->half_tile_height + tilemap->half_tile_height};
+        const float offset_x_default = -(float)tilemap->width * tilemap->tile_width + tilemap->tile_width;
+        vec2 offset = {offset_x_default, -(float)tilemap->height * tilemap->tile_height + tilemap->tile_height};
         uint32_t vertex = 0;
 
         for (uint32_t y = 0; y < tilemap->height; y++) {
-                const float bottom = offset.y + tilemap->half_tile_height;
-                const float top = offset.y - tilemap->half_tile_height;
+                const float bottom = offset.y + tilemap->tile_height;
+                const float top = offset.y - tilemap->tile_height;
 
                 for (uint32_t x = 0; x < tilemap->width; x++) {
-                        const float right = offset.x + tilemap->half_tile_width;
-                        const float left = offset.x - tilemap->half_tile_width;
+                        const float right = offset.x + tilemap->tile_width;
+                        const float left = offset.x - tilemap->tile_width;
 
                         // triangle one
                         tilemap->vertices[vertex][0].pos[0] = left;
@@ -903,24 +929,28 @@ hs_tilemap_init(hs_tilemap* tilemap, const char* texture, const GLenum colour_ch
                         // set texture data
                         hs_tilemap_set(tilemap, vertex, default_tex);
 
-                        offset.x += tilemap->half_tile_width * 2.0f;
+                        offset.x += tilemap->tile_width * 2.0f;
                         vertex++;
                 }
 
                 offset.x = offset_x_default;
-                offset.y += tilemap->half_tile_height * 2.0f;
+                offset.y += tilemap->tile_height * 2.0f;
         }
 
-        if (!vobj) vobj = hs_vobj_create(castf(tilemap->vertices), hs_tilemap_sizeof(*tilemap), 0, 0, GL_DYNAMIC_DRAW, 1);
-        tilemap->sp = hs_shader_program_tex_create(
-                hs_shader_program_create(hs_sp_texture_transform_create(), vobj),
-                hs_tex2d_create(texture, colour_channel, GL_REPEAT, GL_NEAREST, 1), "u_tex");
+        if (!tilemap->sp.p) {
+                hs_vobj* vobj = hs_vobj_create(castf(tilemap->vertices), hs_tilemap_sizeof(*tilemap), 0, 0, GL_DYNAMIC_DRAW, 1);
+                tilemap->sp = hs_shader_program_tex_create(
+                        hs_shader_program_create(hs_sp_texture_transform_create(), vobj), texture, "u_tex");
 
-        hs_tilemap_transform(*tilemap, (mat4)MAT4_IDENTITY);
-        hs_tilemap_perspective(*tilemap, (mat4)MAT4_IDENTITY);
+                hs_tilemap_transform(*tilemap, (mat4)MAT4_IDENTITY);
+                hs_tilemap_perspective(*tilemap, (mat4)MAT4_IDENTITY);
 
-        hs_vattrib_enable_float(0, 2, 4, 0);
-        hs_vattrib_enable_float(1, 2, 4, 2);
+                hs_vattrib_enable_float(0, 2, 4, 0);
+                hs_vattrib_enable_float(1, 2, 4, 2);
+        } else {
+                hs_tilemap_update_vbo(*tilemap);
+        }
+
 }
 
 inline void
@@ -964,7 +994,7 @@ hs_sprite_create(const char* texture, const GLenum colour_channel, hs_vobj* vobj
 {
 
         int width, height;
-        uint32_t tex = hs_create_tex2d_size_info(texture, colour_channel, GL_REPEAT, GL_NEAREST, &width, &height);
+        uint32_t tex = hs_tex2d_create_size_info(texture, colour_channel, GL_REPEAT, GL_NEAREST, &width, &height);
         const float vertices[] = HS_DEFAULT_SQUARE_SCALED_TEX_VERT_ONLY(
                 (float)width/(float)gd.width, (float)height/(float)gd.height);
 
@@ -1003,58 +1033,22 @@ hs_sprite_draw(const hs_shader_program_tex sp)
         glDrawArrays(GL_TRIANGLES, 0, 6);
 }
 
-struct nk_image
+#ifndef NO_STBI
+inline struct nk_image
 hs_nk_image_load(const char *filename)
 {
-    int width, height, nr_channels;
-    unsigned char* texture_data = stbi_load(filename, &width, &height, &nr_channels, 0);
-    if (!texture_data) {
-            fprintf(stderr, "---error loading texture \"%s\"--\n", filename);
-            assert(texture_data);
-    }
-
-    GLuint tex;
-    glGenTextures(1, &tex);
-    glBindTexture(GL_TEXTURE_2D, tex);
-    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, texture_data);
-    glGenerateMipmap(GL_TEXTURE_2D);
-
-    stbi_image_free(texture_data);
-
-    return  nk_image_id((int)tex);
+        return  nk_image_id(hs_tex2d_create(filename, GL_RGBA, GL_CLAMP_TO_EDGE, GL_NEAREST));
 }
 
-struct nk_image
+inline struct nk_image
 hs_nk_image_load_size_info(const char *filename, int* width, int* height)
 {
-    int nr_channels;
-    unsigned char* texture_data = stbi_load(filename, width, height, &nr_channels, 0);
-    if (!texture_data) {
-            fprintf(stderr, "---error loading texture \"%s\"--\n", filename);
-            assert(texture_data);
-    }
-
-    GLuint tex;
-    glGenTextures(1, &tex);
-    glBindTexture(GL_TEXTURE_2D, tex);
-    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, *width, *height, 0, GL_RGBA, GL_UNSIGNED_BYTE, texture_data);
-    glGenerateMipmap(GL_TEXTURE_2D);
-
-    stbi_image_free(texture_data);
-
-    return  nk_image_id((int)tex);
+        return  nk_image_id(hs_tex2d_create_size_info(filename, GL_RGBA, GL_CLAMP_TO_EDGE, GL_NEAREST, width, height));
 }
+#endif
 
 inline uint32_t
-hs_create_vao(const uint32_t count)
+hs_vao_create(const uint32_t count)
 {
         uint32_t vao;
         glGenVertexArrays(count, &vao);
@@ -1092,17 +1086,18 @@ hs_vobj_create(const float    *vbuff, const uint32_t vbuffsize,
         assert(vobj);
         vobj->vbo = hs_vbo_create(vbuff, vbuffsize, usage, count);
         vobj->ebo = hs_ebo_create(ibuff, ibuffsize, usage, count);
-        vobj->vao = hs_create_vao(count);
+        vobj->vao = hs_vao_create(count);
         vobj->count = count;
         return vobj;
 }
 
 inline void
-hs_vobj_delete(hs_vobj* vobj)
+hs_vobj_free(hs_vobj* vobj)
 {
         glDeleteVertexArrays(vobj->count, &vobj->vao);
         glDeleteBuffers(vobj->count, &vobj->ebo);
         glDeleteBuffers(vobj->count, &vobj->vbo);
+        free(vobj);
 }
 
 inline void
