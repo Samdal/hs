@@ -254,6 +254,8 @@ extern void hs_fps_callback_init(const hs_game_data gd, void(*mouse_callback)(GL
 
 #ifdef HS_IMPL
 
+static uint32_t hs_default_missing_tex = 0;
+
 #define GLAD_IMPL
 #include "external/glad/glad_impl.h"
 #define GLFW_IMPL
@@ -606,13 +608,13 @@ hs_tex2d_create(const char *filename, const GLenum format,
 inline uint32_t
 hs_tex2d_create_pixel(const char *filename, const GLenum format)
 {
-        return hs_tex2d_create(filename, format, GL_CLAMP_TO_EDGE, GL_NEAREST);
+        return hs_tex2d_create(filename, format, GL_REPEAT, GL_NEAREST);
 }
 
 inline uint32_t
 hs_tex2d_create_size_info_pixel(const char *filename, const GLenum format, int* width, int* height)
 {
-        return hs_tex2d_create_size_info(filename, format, GL_CLAMP_TO_EDGE, GL_NEAREST, width, height);
+        return hs_tex2d_create_size_info(filename, format, GL_REPEAT, GL_NEAREST, width, height);
 }
 
 uint32_t
@@ -836,7 +838,8 @@ hs_tilemap_set(hs_tilemap* tilemap, const uint32_t vertex, uint32_t tile)
 
         const float width = 1.0f/tilemap->tileset_width;
         const float height = 1.0f/tilemap->tileset_height;
-        const float xpos = width * (tile % tilemap->tileset_width);
+        float xpos = width * (tile % tilemap->tileset_width);
+        if (xpos == 0.0f) xpos = 1.0f;
         const float ypos = height * ceilf((float)tile / (float)tilemap->tileset_width);
 
         // bottom left
@@ -862,6 +865,7 @@ hs_tilemap_set(hs_tilemap* tilemap, const uint32_t vertex, uint32_t tile)
         // bottom left
         tilemap->vertices[vertex][5].tex[0] = xpos - width;
         tilemap->vertices[vertex][5].tex[1] = ypos - height;
+
 }
 
 inline void
@@ -881,10 +885,11 @@ hs_tilemap_init(hs_tilemap* tilemap, uint32_t texture, const uint32_t default_te
 {
         assert(tilemap->width);
         assert(tilemap->height);
-        assert(tilemap->tileset_width);
-        assert(tilemap->tileset_height);
         assert(tilemap->tile_width > 0.0f);
         assert(tilemap->tile_height > 0.0f);
+        if (tilemap->tileset_width == 0) tilemap->tileset_width = 1;
+        if (tilemap->tileset_height == 0) tilemap->tileset_height = 1;
+        if (texture == 0) texture = hs_default_missing_tex;
 
         if (tilemap->vertices) {
                 free(tilemap->vertices);
@@ -1137,6 +1142,21 @@ hs_init(hs_game_data* gd, const char *name, void(*framebuffer_size_callback)(GLF
         glfwMakeContextCurrent(window);
         assert(gladLoadGLLoader((GLADloadproc)glfwGetProcAddress));
         glViewport(0, 0, gd->width, gd->height);
+
+#ifndef NO_STBI
+        {
+                glGenTextures(1, &hs_default_missing_tex);
+                glBindTexture(GL_TEXTURE_2D, hs_default_missing_tex);
+
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 32, 32, 0, GL_RGBA, GL_UNSIGNED_BYTE, hs_default_missing_tex_data);
+                glGenerateMipmap(GL_TEXTURE_2D);
+        }
+#endif
 
         if (flags & HS_BLEND_MODE) {
                 glEnable(GL_BLEND);
