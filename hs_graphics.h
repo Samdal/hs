@@ -87,6 +87,13 @@ typedef struct {
         hs_tex_square* vertices;
 } hs_tilemap;
 
+// this is how anders tale rooms are stored
+// in the future a system to add layers must be made
+typedef struct {
+        uint16_t width, height;
+        uint16_t* data;
+} hs_aroom;
+
 typedef struct {
         uint32_t width, height;
         GLFWwindow* window;
@@ -225,6 +232,8 @@ extern void hs_tilemap_draw(const hs_tilemap tilemap);
 extern void hs_tilemap_free(hs_tilemap* tilemap);
 extern void hs_tilemap_transform(const hs_tilemap tilemap, const mat4 trans);
 extern void hs_tilemap_perspective(const hs_tilemap tilemap, const mat4 perspective);
+extern void hs_aroom_set_xy(hs_aroom* aroom, const uint16_t x, const uint16_t y, const uint16_t data);
+extern uint16_t hs_aroom_get_xy(const hs_aroom aroom, const uint16_t x, const uint16_t y);
 
 /* Sprite stuff */
 
@@ -992,6 +1001,18 @@ hs_tilemap_perspective(const hs_tilemap tilemap, const mat4 perspective)
 {
         glUseProgram(tilemap.sp.p);
         glUniformMatrix4fv(1, 1, GL_FALSE, castf(perspective));
+}
+
+inline void
+hs_aroom_set_xy(hs_aroom* aroom, const uint16_t x, const uint16_t y, const uint16_t data)
+{
+        aroom->data[x + y * aroom->width] = data;
+}
+
+inline uint16_t
+hs_aroom_get_xy(const hs_aroom aroom, const uint16_t x, const uint16_t y)
+{
+        return aroom.data[x + y * aroom.width];
 }
 
 inline hs_shader_program_tex
