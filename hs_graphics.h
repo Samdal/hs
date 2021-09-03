@@ -88,11 +88,16 @@ typedef struct {
 } hs_tilemap;
 
 // this is how anders tale rooms are stored
-// in the future a system to add layers must be made
+// --IMPORTANT: LAYERS MUST BE AT LEAST 1 :IMPORTANT--
 typedef struct {
-        uint16_t width, height;
-        uint16_t* data;
+        uint16_t width, height, layers;
+        uint8_t* data;
 } hs_aroom;
+
+typedef struct {
+        uint32_t size, position_offset;
+        uint8_t* data;
+} hs_byte_buffer;
 
 typedef struct {
         uint32_t width, height;
@@ -164,7 +169,10 @@ extern hs_coord hs_uniform_coord_create(const uint32_t program,
 extern float hs_delta();
 extern void hs_sp_use(const hs_shader_program sp);
 
-extern char*    hs_file_read(const char *file_path);
+extern unsigned char* hs_file_read(const char *file_path);
+extern hs_byte_buffer hs_byte_buffer_from_file(const char* file_path);
+extern hs_aroom hs_aroom_from_file(const char* file_path);
+extern void hs_aroom_write_to_file(const char* file_path, const hs_aroom aroom);
 extern uint32_t hs_shader_create(const char *src, const GLenum shader_type);
 extern uint32_t hs_sp_create(const uint32_t v_shader, const uint32_t f_shader);
 extern uint32_t hs_sp_texture_transform_create();
@@ -233,7 +241,9 @@ extern void hs_tilemap_free(hs_tilemap* tilemap);
 extern void hs_tilemap_transform(const hs_tilemap tilemap, const mat4 trans);
 extern void hs_tilemap_perspective(const hs_tilemap tilemap, const mat4 perspective);
 extern void hs_aroom_set_xy(hs_aroom* aroom, const uint16_t x, const uint16_t y, const uint16_t data);
-extern uint16_t hs_aroom_get_xy(const hs_aroom aroom, const uint16_t x, const uint16_t y);
+extern void hs_aroom_to_tilemap(const hs_aroom aroom, hs_tilemap* tilemap, const uint16_t layer);
+extern uint8_t hs_aroom_get_xy(const hs_aroom aroom, const uint16_t x, const uint16_t y);
+extern void hs_aroom_set_tilemap(const hs_aroom aroom, hs_tilemap* tilemap, const uint16_t layer);
 
 /* Sprite stuff */
 
@@ -365,12 +375,12 @@ hs_sp_use(const hs_shader_program sp)
         glBindVertexArray(sp.vobj->vao);
 }
 
-char*
+unsigned char*
 hs_file_read(const char *file_path)
 {
         FILE *file = fopen(file_path, "r");
         if (!file) {
-                fprintf(stderr, "---error reading file \"%s\"--\n", file_path);
+                fprintf(stderr, "---error reading file \"%s\"---\n", file_path);
                 assert(file);
         }
 
@@ -378,7 +388,7 @@ hs_file_read(const char *file_path)
         uint32_t readsize = ftell(file);
         rewind(file);
 
-        char *buffer = malloc(readsize);
+        unsigned char* buffer = malloc(readsize);
         assert(buffer);
 
         fread(buffer, 1, readsize, file);
@@ -386,6 +396,70 @@ hs_file_read(const char *file_path)
 
         fclose(file);
         return buffer;
+}
+
+inline hs_byte_buffer
+hs_byte_buffer_from_file(const char* file_path)
+{
+        /* same as hs_file_read, just need the "readsize" information */
+        FILE *file = fopen(file_path, "r");
+        if (!file) {
+                fprintf(stderr, "---error reading file \"%s\"---\n", file_path);
+                assert(file);
+        }
+
+        fseek(file, 0L, SEEK_END);
+        uint32_t readsize = ftell(file);
+        rewind(file);
+
+        unsigned char* buffer = malloc(readsize);
+        assert(buffer);
+
+        fread(buffer, 1, readsize, file);
+        buffer[readsize] = '\0';
+
+        fclose(file);
+
+        return (hs_byte_buffer){
+                .size = readsize,
+                .data = buffer,
+        };
+}
+
+hs_aroom
+hs_aroom_from_file(const char* file_path)
+{
+        uint8_t* data = hs_file_read(file_path);
+        uint16_t* header = (uint16_t*)data;
+        hs_aroom aroom;
+        aroom.width = header[0];
+        aroom.height = header[1];
+        aroom.layers = header[2] == 0 ? 1 : header[2];
+
+        uint8_t* aroom_data = (uint8_t*)malloc(aroom.width * aroom.height * aroom.layers);
+        assert(aroom_data);
+        memcpy(aroom_data, &data[sizeof(uint16_t)*3], aroom.width * aroom.height * aroom.layers);
+        free(data);
+
+        aroom.data = aroom_data;
+        return aroom;
+}
+
+void
+hs_aroom_write_to_file(const char* file_path, const hs_aroom aroom)
+{
+        uint16_t layers = aroom.layers == 0 ? 1 : aroom.layers;
+        FILE *file = fopen(file_path, "wb");
+        if (!file) {
+                fprintf(stderr, "---error writing to file \"%s\"---\n", file_path);
+                assert(file);
+        }
+
+        fwrite(&aroom.width, sizeof(uint16_t), 1, file);
+        fwrite(&aroom.height, sizeof(uint16_t), 1, file);
+        fwrite(&layers, sizeof(uint16_t), 1, file);
+        fwrite(aroom.data, aroom.width * aroom.height * layers, 1, file);
+        fclose(file);
 }
 
 uint32_t
@@ -456,8 +530,8 @@ hs_sp_create_from_src(const char *v_src, const char *f_src)
 uint32_t
 hs_sp_create_from_file(const char *v_file, const char *f_file)
 {
-        char *v_src = hs_file_read(v_file);
-        char *f_src = hs_file_read(f_file);
+        unsigned char *v_src = hs_file_read(v_file);
+        unsigned char *f_src = hs_file_read(f_file);
 
         uint32_t sp = hs_sp_create_from_src(v_src, f_src);
 
@@ -894,8 +968,8 @@ hs_tilemap_init(hs_tilemap* tilemap, uint32_t texture, const uint32_t default_te
 {
         assert(tilemap->width);
         assert(tilemap->height);
-        assert(tilemap->tile_width > 0.0f);
-        assert(tilemap->tile_height > 0.0f);
+        if (tilemap->tile_width <= 0.0f) tilemap->tile_width = 1.0f/tilemap->width;
+        if (tilemap->tile_height <= 0.0f) tilemap->tile_height = 1.0f/tilemap->height;
         if (tilemap->tileset_width == 0) tilemap->tileset_width = 1;
         if (tilemap->tileset_height == 0) tilemap->tileset_height = 1;
         if (texture == 0) texture = hs_default_missing_tex;
@@ -1009,10 +1083,43 @@ hs_aroom_set_xy(hs_aroom* aroom, const uint16_t x, const uint16_t y, const uint1
         aroom->data[x + y * aroom->width] = data;
 }
 
-inline uint16_t
+void
+hs_aroom_to_tilemap(const hs_aroom aroom, hs_tilemap* tilemap, const uint16_t layer)
+{
+        tilemap->width = aroom.width;
+        tilemap->height = aroom.height;
+        hs_tilemap_init(tilemap, tilemap->sp.tex.tex_unit, 0);
+
+        if (tilemap->tileset_width * tilemap->tileset_width == 1)
+                return;
+
+        hs_aroom_set_tilemap(aroom, tilemap, layer);
+}
+
+inline uint8_t
 hs_aroom_get_xy(const hs_aroom aroom, const uint16_t x, const uint16_t y)
 {
         return aroom.data[x + y * aroom.width];
+}
+
+void
+hs_aroom_set_tilemap(const hs_aroom aroom, hs_tilemap* tilemap, const uint16_t layer)
+{
+        if (tilemap->width != aroom.width ||
+            tilemap->width != aroom.height)
+                return;
+
+        if (layer > 1) {
+                const uint32_t offset = (aroom.width * aroom.height * layer) - aroom.width * aroom.height;
+                for(uint32_t i = 0; i < aroom.width * aroom.height; i++) {
+                        hs_tilemap_set(tilemap, i, (uint32_t)aroom.data[i + offset]);
+                }
+        } else {
+                for(uint32_t i = 0; i < aroom.width * aroom.height; i++) {
+                        hs_tilemap_set(tilemap, i, (uint32_t)aroom.data[i]);
+                }
+        }
+        hs_tilemap_update_vbo(*tilemap);
 }
 
 inline hs_shader_program_tex
