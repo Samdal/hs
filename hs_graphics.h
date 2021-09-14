@@ -4,9 +4,16 @@
 #include "external/glad/glad.h"
 #include "external/glfw/glfw3.h"
 #include <stdlib.h>
+#include <stdbool.h>
+
+#ifndef NO_STDIO
 #include <assert.h>
 #include <stdio.h>
-#include <stdbool.h>
+#endif
+
+#ifdef NO_STDIO
+#define assert(x) abort(1)
+#endif
 
 #ifndef NO_STBI
 #define STB_IMAGE_IMPLEMENTATION
@@ -380,7 +387,9 @@ hs_file_read(const char *file_path)
 {
         FILE *file = fopen(file_path, "r");
         if (!file) {
+#ifndef NO_STDIO
                 fprintf(stderr, "---error reading file \"%s\"---\n", file_path);
+#endif
                 assert(file);
         }
 
@@ -404,7 +413,9 @@ hs_byte_buffer_from_file(const char* file_path)
         /* same as hs_file_read, just need the "readsize" information */
         FILE *file = fopen(file_path, "r");
         if (!file) {
+#ifndef NO_STDIO
                 fprintf(stderr, "---error reading file \"%s\"---\n", file_path);
+#endif
                 assert(file);
         }
 
@@ -451,7 +462,9 @@ hs_aroom_write_to_file(const char* file_path, const hs_aroom aroom)
         uint16_t layers = aroom.layers == 0 ? 1 : aroom.layers;
         FILE *file = fopen(file_path, "wb");
         if (!file) {
+#ifndef NO_STDIO
                 fprintf(stderr, "---error writing to file \"%s\"---\n", file_path);
+#endif
                 assert(file);
         }
 
@@ -475,11 +488,13 @@ hs_shader_create(const char *src, const GLenum shader_type)
         if (!shader_compile_success) {
                 char info_log[512];
                 glGetShaderInfoLog(shader, 512, NULL, info_log);
+#ifndef NO_STDIO
                 fprintf(stderr, "-------------ERROR------------\n"
                        "::OpenGL Failed to compile shader::\n%s\n", info_log);
                 fprintf(stderr, "-------------SOURCE------------\n");
                 fprintf(stderr, "%s\n", src);
                 fprintf(stderr, "\n------------END_SOURCE----------\n");
+#endif
                 assert(shader_compile_success);
         }
 
@@ -500,8 +515,10 @@ hs_sp_create(const uint32_t v_shader, const uint32_t f_shader)
         if (!program_link_success) {
                 char info_log[512];
                 glGetProgramInfoLog(program, 512, NULL, info_log);
+#ifndef NO_STDIO
                 fprintf(stderr, "-------------ERROR------------\n"
                        "::OpenGL Failed to link program::\n%s\n", info_log);
+#endif
                 assert(program_link_success);
         }
 
@@ -623,7 +640,9 @@ hs_avg_frametime_print(const float delta, const float interval)
         times++;
 
         if (prev > interval) {
+#ifndef NO_STDIO
                 printf("avg frametime: %f\n", (acum/times));
+#endif
                 prev = 0.0f;
                 acum = 0.0f;
                 times = 0;
@@ -641,7 +660,9 @@ hs_avg_fps_print(const float delta, const float interval)
         times++;
 
         if (prev > interval) {
+#ifndef NO_STDIO
                 printf("avg fps: %f\n", 1000/(acum/times));
+#endif
                 prev = 0.0f;
                 acum = 0.0f;
                 times = 0;
@@ -678,7 +699,9 @@ hs_tex2d_create(const char *filename, const GLenum format,
         int width, height, nr_channels;
         unsigned char* texture_data = stbi_load(filename, &width, &height, &nr_channels, 0);
         if (!texture_data) {
+#ifndef NO_STDIO
                 fprintf(stderr, "---error loading texture \"%s\"--\n", filename);
+#endif
                 assert(texture_data);
         }
         glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, texture_data);
@@ -717,7 +740,9 @@ hs_tex2d_create_size_info(const char *filename, const GLenum format,
         int nr_channels;
         unsigned char* texture_data = stbi_load(filename, width, height, &nr_channels, 0);
         if (!texture_data) {
+#ifndef NO_STDIO
                 fprintf(stderr, "---error loading texture \"%s\"--\n", filename);
+#endif
                 assert(texture_data);
         }
         glTexImage2D(GL_TEXTURE_2D, 0, format, *width, *height, 0, format, GL_UNSIGNED_BYTE, texture_data);
