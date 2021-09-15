@@ -1115,9 +1115,6 @@ hs_aroom_to_tilemap(const hs_aroom aroom, hs_tilemap* tilemap, const uint16_t la
         tilemap->height = aroom.height;
         hs_tilemap_init(tilemap, tilemap->sp.tex.tex_unit, 0);
 
-        if (tilemap->tileset_width * tilemap->tileset_width == 1)
-                return;
-
         hs_aroom_set_tilemap(aroom, tilemap, layer);
 }
 
