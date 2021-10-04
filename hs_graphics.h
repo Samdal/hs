@@ -1134,7 +1134,6 @@ hs_aroom_set_tilemap(const hs_aroom aroom, hs_tilemap* tilemap, const uint16_t l
                 for(uint32_t i = 0; i < aroom.width * aroom.height; i++)
                         hs_tilemap_set(tilemap, i, aroom.data[i]);
         }
-        hs_tilemap_update_vbo(*tilemap);
 }
 
 void
@@ -1155,7 +1154,6 @@ hs_aroom_set_tilemap_offsetv(const hs_aroom aroom, hs_tilemap* tilemap, const ui
                         for(uint32_t y = offset.y; y < offset.y + aroom.height; y++)
                                 hs_tilemap_set_xy(tilemap, x, y, aroom.data[i++]);
         }
-        hs_tilemap_update_vbo(*tilemap);
 }
 
 inline hs_shader_program_tex
