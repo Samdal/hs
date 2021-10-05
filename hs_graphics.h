@@ -48,18 +48,10 @@ typedef struct {
 
 typedef struct {
         uint32_t p;
-        hs_vobj* vobj;
+        hs_vobj vobj;
 } hs_shader_program;
 
-typedef struct {
-        uint32_t tex_unit, u_tex;
-} hs_tex;
-
-typedef struct {
-        uint32_t p;
-        hs_vobj* vobj;
-        hs_tex tex;
-} hs_shader_program_tex;
+typedef uint32_t hs_tex;
 
 typedef struct {
         uint32_t model, view, proj;
@@ -83,7 +75,8 @@ typedef hs_tex_corner hs_tex_square[6];
 typedef struct {
         uint32_t width, height, tileset_width, tileset_height;
         float tile_width, tile_height;
-        hs_shader_program_tex sp;
+        hs_shader_program sp;
+        hs_tex tex;
         hs_tex_square* vertices;
 } hs_tilemap;
 
@@ -113,22 +106,23 @@ typedef struct {
 } aabb2i;
 
 typedef struct {
-        vec2 pos, half_size, frame_velocity;
-        uint64_t flags;
-        hs_shader_program_tex sp;
-} entity2_hot;
+        vec2 pos, half_size, frame_vel;
+        uint32_t flags;
+        hs_tex tex;
+        hs_shader_program sp;
+} hs_entity2_hot;
 
 typedef struct {
         vec2 external_velocity;
         float base_mov_speed, mov_speed_mul, fire_rate_mul, invisframe_mul;
         uint16_t max_hp, hp, armour;
         void* current_room; //TODO: create room struct and stuff
-} entity2_cold;
+} hs_entity2_cold;
 
 typedef struct {
-        entity2_hot* hot;
-        entity2_cold cold;
-} entity2;
+        hs_entity2_hot* hot;
+        hs_entity2_cold cold;
+} hs_entity2;
 
 enum entity2_flags {
         AABB_STATIC = 1 << 0,
@@ -183,11 +177,9 @@ extern uint32_t hs_fbo_color_create(const uint32_t width, const uint32_t height,
 extern void     hs_fbo_draw_to_screen(const uint32_t fbo, const uint32_t src_w, const uint32_t src_h,
                       const uint32_t dst_x, const uint32_t dst_y, const uint32_t dst_w, const uint32_t dst_h);
 extern void     hs_sp_delete(hs_shader_program sp);
-extern void     hs_sp_tex_delete(hs_shader_program_tex sp);
 extern void     hs_avg_frametime_print(const float delta, const float interval);
 extern void     hs_avg_fps_print(const float delta, const float interval);
-extern hs_shader_program hs_shader_program_create(const uint32_t sp, hs_vobj* vobj);
-extern hs_shader_program_tex hs_shader_program_tex_create(const hs_shader_program sp, uint32_t tex_unit, const char* uniform_name);
+extern hs_shader_program hs_shader_program_create(const uint32_t sp, hs_vobj vobj);
 
 extern void     hs_tex_uniform_set(const hs_tex tex, const uint32_t val);
 extern void     hs_tex2d_activate(const uint32_t texture_object, const GLenum texindex);
@@ -235,7 +227,6 @@ extern void hs_tilemap_set(hs_tilemap* tilemap, const uint32_t vertex, uint32_t 
 extern void hs_tilemap_setall(hs_tilemap* tilemap, const uint32_t tile);
 extern void hs_tilemap_set_xy(hs_tilemap* tilemap, const uint32_t x, const uint32_t y, uint32_t tile);
 extern uint32_t hs_tilemap_sizeof(const hs_tilemap tilemap);
-// if vobj is NULL a new vobj will be created
 // expects width, height, sub_tex and half_tile to be filled out
 extern void hs_tilemap_init(hs_tilemap* tilemap, const uint32_t default_tex);
 extern void hs_tilemap_update_vbo(const hs_tilemap tilemap);
@@ -250,12 +241,12 @@ extern void hs_aroom_set_tilemap(const hs_aroom aroom, hs_tilemap* tilemap, cons
 extern void hs_aroom_set_tilemap_offsetv(const hs_aroom aroom, hs_tilemap* tilemap, const uint16_t layer, const vec2i offset);
 
 /* Sprite stuff */
+extern void hs_sprite_transform(const hs_shader_program sprite, const mat4 trans);
+extern void hs_sprite_perspective(const hs_shader_program sprite, const mat4 perspective);
+extern hs_shader_program hs_sp_sprite_create(const float width, const float height, hs_game_data gd);
+extern void hs_sprite_draw(const hs_shader_program sp);
 
-// if vobj is NULL a new vobj will be created
-extern void hs_sprite_transform(const hs_shader_program_tex sprite, const mat4 trans);
-extern void hs_sprite_perspective(const hs_shader_program_tex sprite, const mat4 perspective);
-extern hs_shader_program_tex hs_sprite_create(const char* texture, const GLenum colour_channel, hs_vobj* vobj, const hs_game_data gd);
-extern void hs_sprite_draw(const hs_shader_program_tex sp);
+extern hs_entity2 hs_entity2_create(hs_entity2_hot* hot, hs_shader_program sp, hs_tex tex);
 
 /* Nuklear */
 #ifdef HS_NUKLEAR
@@ -270,11 +261,11 @@ extern uint32_t hs_vbo_create(const float    *vbuff, const uint32_t buffsize,
                               const GLenum    usage, const uint32_t count);
 extern uint32_t hs_ebo_create(const uint32_t *ibuff, const uint32_t buffsize,
                               const GLenum    usage, const uint32_t count);
-extern hs_vobj* hs_vobj_create(const float    *vbuff, const uint32_t vbuffsize,
+extern hs_vobj hs_vobj_create(const float    *vbuff, const uint32_t vbuffsize,
                               const uint32_t *ibuff, const uint32_t ibuffsize,
                               const GLenum    usage, const uint32_t count);
 // Expects vobj to be heap allocated
-extern void hs_vobj_free(hs_vobj* vobj);
+extern void hs_vobj_free(hs_vobj vobj);
 extern void hs_fps_callback_init(const hs_game_data gd, void(*mouse_callback)(GLFWwindow*, double xpos, double ypos));
 
 #ifdef HS_IMPL
@@ -378,7 +369,7 @@ inline void
 hs_sp_use(const hs_shader_program sp)
 {
         glUseProgram(sp.p);
-        glBindVertexArray(sp.vobj->vao);
+        glBindVertexArray(sp.vobj.vao);
 }
 
 unsigned char*
@@ -582,24 +573,11 @@ hs_fbo_draw_to_screen(const uint32_t fbo, const uint32_t src_w, const uint32_t s
 }
 
 inline hs_shader_program
-hs_shader_program_create(const uint32_t sp, hs_vobj* vobj)
+hs_shader_program_create(const uint32_t sp, hs_vobj vobj)
 {
         return (hs_shader_program) {
                 .p = sp,
                 .vobj = vobj,
-        };
-}
-
-inline hs_shader_program_tex
-hs_shader_program_tex_create(const hs_shader_program sp, uint32_t tex_unit, const char* uniform_name)
-{
-        return (hs_shader_program_tex) {
-                .p = sp.p,
-                .vobj = sp.vobj,
-                .tex = {
-                        .tex_unit = tex_unit,
-                        .u_tex = hs_uniform_create(sp.p, uniform_name)
-                }
         };
 }
 
@@ -608,14 +586,6 @@ hs_sp_delete(hs_shader_program sp)
 {
         glDeleteProgram(sp.p);
         hs_vobj_free(sp.vobj);
-}
-
-inline void
-hs_sp_tex_delete(hs_shader_program_tex sp)
-{
-        glDeleteProgram(sp.p);
-        hs_vobj_free(sp.vobj);
-        glDeleteTextures(1, &sp.tex.tex_unit);
 }
 
 inline void
@@ -655,9 +625,9 @@ hs_avg_fps_print(const float delta, const float interval)
 }
 
 inline void
-hs_tex_uniform_set(const hs_tex tex, const uint32_t val)
+hs_tex_uniform_set(const uint32_t u_tex, const uint32_t tex)
 {
-        glUniform1i(tex.u_tex, val);
+        glUniform1i(tex, tex);
 }
 
 inline void
@@ -993,7 +963,7 @@ hs_tilemap_init(hs_tilemap* tilemap, const uint32_t default_tex)
         if (tilemap->tile_height <= 0.0f)  tilemap->tile_height = 1.0f/tilemap->height;
         if (tilemap->tileset_width == 0)   tilemap->tileset_width = 1;
         if (tilemap->tileset_height == 0)  tilemap->tileset_height = 1;
-        if (tilemap->sp.tex.tex_unit == 0) tilemap->sp.tex.tex_unit = hs_default_missing_tex;
+        if (tilemap->tex == 0) tilemap->tex = hs_default_missing_tex;
 
         if (tilemap->vertices) {
                 free(tilemap->vertices);
@@ -1047,11 +1017,10 @@ hs_tilemap_init(hs_tilemap* tilemap, const uint32_t default_tex)
         }
 
         if (!tilemap->sp.p) {
-                hs_vobj* vobj = hs_vobj_create(castf(tilemap->vertices), hs_tilemap_sizeof(*tilemap), 0, 0, GL_DYNAMIC_DRAW, 1);
-                tilemap->sp = hs_shader_program_tex_create(
-                        hs_shader_program_create(hs_sp_texture_transform_create(), vobj),
-                        tilemap->sp.tex.tex_unit, "u_tex");
+                hs_vobj vobj = hs_vobj_create(castf(tilemap->vertices), hs_tilemap_sizeof(*tilemap), 0, 0, GL_DYNAMIC_DRAW, 1);
+                tilemap->sp = hs_shader_program_create(hs_sp_texture_transform_create(), vobj);
 
+                hs_tex_uniform_set(hs_uniform_create(tilemap->sp.p, "u_tex"), 0);
                 hs_tilemap_transform(*tilemap, (mat4)MAT4_IDENTITY);
                 hs_tilemap_perspective(*tilemap, (mat4)MAT4_IDENTITY);
 
@@ -1066,7 +1035,7 @@ hs_tilemap_init(hs_tilemap* tilemap, const uint32_t default_tex)
 inline void
 hs_tilemap_update_vbo(const hs_tilemap tilemap)
 {
-        glBindBuffer(GL_ARRAY_BUFFER, tilemap.sp.vobj->vbo);
+        glBindBuffer(GL_ARRAY_BUFFER, tilemap.sp.vobj.vbo);
         glBufferData(GL_ARRAY_BUFFER, hs_tilemap_sizeof(tilemap), castf(tilemap.vertices), GL_DYNAMIC_DRAW);
 }
 
@@ -1074,7 +1043,7 @@ inline void
 hs_tilemap_draw(const hs_tilemap tilemap)
 {
         glUseProgram(tilemap.sp.p);
-        glBindVertexArray(tilemap.sp.vobj->vao);
+        glBindVertexArray(tilemap.sp.vobj.vao);
         glDrawArrays(GL_TRIANGLES, 0, 6 * tilemap.width * tilemap.height);
 }
 
@@ -1082,21 +1051,28 @@ inline void
 hs_tilemap_free(hs_tilemap* tilemap)
 {
         free(tilemap->vertices);
-        hs_sp_tex_delete(tilemap->sp);
+        hs_sp_delete(tilemap->sp);
+        glDeleteTextures(1, &tilemap->tex);
 }
 
 inline void
 hs_tilemap_transform(const hs_tilemap tilemap, const mat4 trans)
 {
+        static int u_transform = -1;
+        if (u_transform < 0) u_transform = hs_uniform_create(tilemap.sp.p, "u_transform");
+
         glUseProgram(tilemap.sp.p);
-        glUniformMatrix4fv(0, 1, GL_FALSE, castf(trans));
+        glUniformMatrix4fv(u_transform, 1, GL_FALSE, castf(trans));
 }
 
 inline void
 hs_tilemap_perspective(const hs_tilemap tilemap, const mat4 perspective)
 {
+        static int u_perspective = -1;
+        if (u_perspective < 0) u_perspective = hs_uniform_create(tilemap.sp.p, "u_perspective");
+
         glUseProgram(tilemap.sp.p);
-        glUniformMatrix4fv(1, 1, GL_FALSE, castf(perspective));
+        glUniformMatrix4fv(u_perspective, 1, GL_FALSE, castf(perspective));
 }
 
 inline void
@@ -1157,18 +1133,14 @@ hs_aroom_set_tilemap_offsetv(const hs_aroom aroom, hs_tilemap* tilemap, const ui
         }
 }
 
-inline hs_shader_program_tex
-hs_sprite_create(const char* texture, const GLenum colour_channel, hs_vobj* vobj, const hs_game_data gd)
+inline hs_shader_program
+hs_sp_sprite_create(const float width, const float height, hs_game_data gd)
 {
-
-        int width, height;
-        uint32_t tex = hs_tex2d_create_size_info(texture, colour_channel, GL_REPEAT, GL_NEAREST, &width, &height);
         const float vertices[] = HS_DEFAULT_SQUARE_SCALED_TEX_VERT_ONLY(
                 (float)width/(float)gd.width, (float)height/(float)gd.height);
 
-        if (!vobj) vobj = hs_vobj_create(vertices, sizeof(vertices), 0, 0, GL_STATIC_DRAW, 1);
-        const hs_shader_program_tex sp = hs_shader_program_tex_create(
-                hs_shader_program_create(hs_sp_texture_transform_create(), vobj), tex, "u_tex");
+        hs_vobj vobj = hs_vobj_create(vertices, sizeof(vertices), 0, 0, GL_STATIC_DRAW, 1);
+        const hs_shader_program sp = hs_shader_program_create(hs_sp_texture_transform_create(), vobj);
 
         hs_vattrib_enable_float(0, 2, 4, 0);
         hs_vattrib_enable_float(1, 2, 4, 2);
@@ -1180,25 +1152,39 @@ hs_sprite_create(const char* texture, const GLenum colour_channel, hs_vobj* vobj
 }
 
 inline void
-hs_sprite_transform(const hs_shader_program_tex sprite, const mat4 trans)
+hs_sprite_transform(const hs_shader_program sprite, const mat4 trans)
 {
+        static int u_transform = -1;
+        if (u_transform < 0) u_transform = hs_uniform_create(sprite.p, "u_transform");
+
         glUseProgram(sprite.p);
-        glUniformMatrix4fv(0, 1, GL_FALSE, castf(trans));
+        glUniformMatrix4fv(u_transform, 1, GL_FALSE, castf(trans));
 }
 
 inline void
-hs_sprite_perspective(const hs_shader_program_tex sprite, const mat4 perspective)
+hs_sprite_perspective(const hs_shader_program sprite, const mat4 perspective)
 {
+        static int u_perspective = -1;
+        if (u_perspective < 0) u_perspective = hs_uniform_create(sprite.p, "u_perspective");
+
         glUseProgram(sprite.p);
-        glUniformMatrix4fv(1, 1, GL_FALSE, castf(perspective));
+        glUniformMatrix4fv(u_perspective, 1, GL_FALSE, castf(perspective));
 }
 
 inline void
-hs_sprite_draw(const hs_shader_program_tex sp)
+hs_sprite_draw(const hs_shader_program sp)
 {
-        glUseProgram(sp.p);
-        glBindVertexArray(sp.vobj->vao);
+        //glUseProgram(sp.p);
+        //glBindVertexArray(sp.vobj.vao);
         glDrawArrays(GL_TRIANGLES, 0, 6);
+}
+
+inline hs_entity2
+hs_entity2_create(hs_entity2_hot* hot, hs_shader_program sp, hs_tex tex)
+{
+        hot->sp = sp;
+        hot->tex = tex;
+        return (hs_entity2){.hot = hot};
 }
 
 #ifdef HS_NUKLEAR
@@ -1247,28 +1233,26 @@ hs_ebo_create(const uint32_t *ibuff, const uint32_t buffsize, const GLenum usage
         return ebo;
 }
 
-inline hs_vobj*
+inline hs_vobj
 hs_vobj_create(const float    *vbuff, const uint32_t vbuffsize,
                const uint32_t *ibuff, const uint32_t ibuffsize,
                const GLenum    usage, const uint32_t count)
 {
-        hs_vobj* vobj = malloc(sizeof(hs_vobj));
-        assert(vobj);
-        vobj->vbo = hs_vbo_create(vbuff, vbuffsize, usage, count);
-        vobj->ebo = hs_ebo_create(ibuff, ibuffsize, usage, count);
-        vobj->vao = hs_vao_create(count);
-        vobj->count = count;
+        hs_vobj vobj;
+        vobj.vbo = hs_vbo_create(vbuff, vbuffsize, usage, count);
+        vobj.ebo = hs_ebo_create(ibuff, ibuffsize, usage, count);
+        vobj.vao = hs_vao_create(count);
+        vobj.count = count;
         return vobj;
 }
 
 inline void
-hs_vobj_free(hs_vobj* vobj)
+hs_vobj_free(hs_vobj vobj)
 {
-        glDeleteVertexArrays(vobj->count, &vobj->vao);
-        if (vobj->ebo)
-                glDeleteBuffers(vobj->count, &vobj->ebo);
-        glDeleteBuffers(vobj->count, &vobj->vbo);
-        free(vobj);
+        glDeleteVertexArrays(vobj.count, &vobj.vao);
+        if (vobj.ebo)
+                glDeleteBuffers(vobj.count, &vobj.ebo);
+        glDeleteBuffers(vobj.count, &vobj.vbo);
 }
 
 inline void
