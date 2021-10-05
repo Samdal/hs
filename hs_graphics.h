@@ -114,11 +114,11 @@ typedef struct {
 
 typedef struct {
         vec2 pos, half_size, frame_velocity;
-        uint32_t flags;
+        uint64_t flags;
+        hs_shader_program_tex sp;
 } entity2_hot;
 
 typedef struct {
-        hs_shader_program_tex* sp;
         vec2 external_velocity;
         float base_mov_speed, mov_speed_mul, fire_rate_mul, invisframe_mul;
         uint16_t max_hp, hp, armour;
@@ -134,11 +134,12 @@ enum entity2_flags {
         AABB_STATIC = 1 << 0,
         AABB_RIGID = 1 << 1,
         AABB_CHARACTHER = 1 << 2,
-        player = 1 << 3,
-        preblink = 1 << 4,
-        invisiframe = 1 << 5,
-        confusion = 1 << 6,
-        stunned = 1 << 7,
+        PLAYER = 1 << 3,
+        PREBLINK = 1 << 4,
+        INVISFRAME = 1 << 5,
+        CONFUSION = 1 << 6,
+        STUNNED = 1 << 7,
+        DISABLED = 1 << 8,
 };
 
 enum hs_key_state {
@@ -1264,7 +1265,8 @@ inline void
 hs_vobj_free(hs_vobj* vobj)
 {
         glDeleteVertexArrays(vobj->count, &vobj->vao);
-        glDeleteBuffers(vobj->count, &vobj->ebo);
+        if (vobj->ebo)
+                glDeleteBuffers(vobj->count, &vobj->ebo);
         glDeleteBuffers(vobj->count, &vobj->vbo);
         free(vobj);
 }
