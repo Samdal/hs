@@ -105,6 +105,13 @@ vec2_add(const vec2 v1, const vec2 v2)
         return (vec2){v1.x + v2.x, v1.y + v2.y};
 }
 
+inline static void
+vec2_add_in_place(vec2* v1, const vec2 v2)
+{
+        v1->x += v2.x;
+        v1->y += v2.y;
+}
+
 inline static vec2
 vec2_sub(const vec2 v1, const vec2 v2)
 {
@@ -146,6 +153,12 @@ vec2_norm(const vec2 vector)
 {
         float len = vec2_len(vector);
         return len == 0.0f ? vector : vec2_scale(vector, 1.0f / len);
+}
+
+inline static uint32_t
+vec2_null(const vec2 vector)
+{
+        return (vector.x == 0 && vector.y == 0);
 }
 
 inline static vec2i
