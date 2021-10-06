@@ -18,10 +18,6 @@
 #include <windows.h>
 #endif
 
-#ifdef HS_NUKLEAR
-#include "hs_nuklear.h"
-#endif
-
 #ifdef HS_SFD
 #include "external/sfd/src/sfd.c"
 #endif
@@ -255,6 +251,10 @@ extern hs_vobj hs_vobj_create(const float    *vbuff, const uint32_t vbuffsize,
 // Expects vobj to be heap allocated
 extern void hs_vobj_free(hs_vobj vobj);
 extern void hs_fps_callback_init(const hs_game_data gd, void(*mouse_callback)(GLFWwindow*, double xpos, double ypos));
+
+#ifdef HS_NUKLEAR
+#include "hs_nuklear.h"
+#endif
 
 #ifdef HS_IMPL
 
@@ -1128,6 +1128,7 @@ hs_aroom_set_tilemap(const hs_aroom aroom, hs_tilemap* tilemap, const uint16_t l
                 for(uint32_t i = 0; i < aroom.width * aroom.height; i++)
                         hs_tilemap_set(tilemap, i, aroom.data[i]);
         }
+        hs_tilemap_update_vbo(*tilemap);
 }
 
 void
