@@ -336,7 +336,6 @@ mat4_ortho(mat4 res, const float l, const float r, const float b, const float t,
 {
         // Main diagonal
         mat4_scale(res, (vec3){2.0f / (r - l), 2.0f / ( t - b ), -2.0f / (f - n)});
-
         return;
         // Last column
         mat4_translate(res, (vec3){-(r + l) / (r - l), -(t + b) / (t - b), -(f + n) / (f - n)});

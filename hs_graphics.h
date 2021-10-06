@@ -19,18 +19,7 @@
 #endif
 
 #ifdef HS_NUKLEAR
-#define NK_INCLUDE_FIXED_TYPES
-#define NK_INCLUDE_STANDARD_IO
-#define NK_INCLUDE_STANDARD_VARARGS
-#define NK_INCLUDE_DEFAULT_ALLOCATOR
-#define NK_INCLUDE_VERTEX_BUFFER_OUTPUT
-#define NK_INCLUDE_FONT_BAKING
-#define NK_INCLUDE_DEFAULT_FONT
-#define NK_IMPLEMENTATION
-#define NK_GLFW_GL3_IMPLEMENTATION
-#define NK_KEYSTATE_BASED_INPUT
-#include "external/nuklear/nuklear.h"
-#include "external/nuklear_glfw_gl3.h"
+#include "hs_nuklear.h"
 #endif
 
 #ifdef HS_SFD
@@ -46,16 +35,17 @@ typedef struct {
         uint32_t count, vbo, vao, ebo;
 } hs_vobj;
 
-typedef struct {
-        uint32_t p;
-        hs_vobj vobj;
-} hs_shader_program;
-
 typedef uint32_t hs_tex;
 
 typedef struct {
         uint32_t model, view, proj;
 } hs_coord;
+
+typedef struct {
+        uint32_t p;
+        hs_vobj vobj;
+        hs_coord coord;
+} hs_shader_program;
 
 typedef struct {
         vec3 pos, up, front;
@@ -64,6 +54,7 @@ typedef struct {
 
 typedef struct {
         vec2 curr, goal;
+        float zoom;
 } hs_camera2_smooth;
 
 typedef struct {
@@ -115,7 +106,7 @@ typedef struct {
 typedef struct {
         vec2 external_velocity;
         float base_mov_speed, mov_speed_mul, fire_rate_mul, invisframe_mul;
-        uint16_t max_hp, hp, armour;
+        uint32_t max_hp, hp, armour;
         void* current_room; //TODO: create room struct and stuff
 } hs_entity2_cold;
 
@@ -155,11 +146,16 @@ extern enum     hs_key_state hs_get_key_held(const hs_game_data gd, const int ke
 extern void     hs_clear(const float r, const  float g, const  float b, const  float a, const GLbitfield mask);
 extern void     hs_vattrib_enable(const uint32_t index, const uint32_t size,
                                   const GLenum type, const uint32_t stride, const size_t pointer);
-extern void      hs_vattrib_enable_float(const uint32_t index, const uint32_t size,
+extern void     hs_vattrib_enable_float(const uint32_t index, const uint32_t size,
                                          const uint32_t stride, const size_t pointer);
 extern uint32_t hs_uniform_create(const uint32_t program, const char* name);
 extern hs_coord hs_uniform_coord_create(const uint32_t program,
                                         const char* model, const char* view, const char* proj);
+extern void     hs_uniform_mat4_set(const uint32_t u_mat, const mat4 mat);
+extern void     hs_uniform_sp_mat4_set(const uint32_t program, const uint32_t u_mat, const mat4 mat);
+extern void     hs_uniform_vec2_set(const uint32_t u_vec, const vec2 vec);
+extern void     hs_uniform_sp_vec2_set(const uint32_t program, const uint32_t u_vec, const vec2 vec);
+
 // time since previous call of hs_delta
 extern float hs_delta();
 extern void hs_sp_use(const hs_shader_program sp);
@@ -222,39 +218,31 @@ extern void hs_camera_look_at(mat4 view, const hs_camera camera);
 extern vec2 hs_pos_to_offset(const float xpos, const float ypos, const float sens);
 extern void hs_camera_update_front(hs_camera* camera);
 
+#define HS_CAMERA2_SMOOTH_DEFAULT {.zoom = 1.0f}
+extern void hs_camera2_smooth_view(mat4 view, const hs_camera2_smooth cam);
+extern void hs_camera2_smooth_move_to_goal(hs_camera2_smooth* cam, const float scale);
+
 /* Tilemap stuff */
-extern void hs_tilemap_set(hs_tilemap* tilemap, const uint32_t vertex, uint32_t tile);
-extern void hs_tilemap_setall(hs_tilemap* tilemap, const uint32_t tile);
-extern void hs_tilemap_set_xy(hs_tilemap* tilemap, const uint32_t x, const uint32_t y, uint32_t tile);
+extern void     hs_tilemap_set(hs_tilemap* tilemap, const uint32_t vertex, uint32_t tile);
+extern void     hs_tilemap_setall(hs_tilemap* tilemap, const uint32_t tile);
+extern void     hs_tilemap_set_xy(hs_tilemap* tilemap, const uint32_t x, const uint32_t y, uint32_t tile);
 extern uint32_t hs_tilemap_sizeof(const hs_tilemap tilemap);
 // expects width, height, sub_tex and half_tile to be filled out
-extern void hs_tilemap_init(hs_tilemap* tilemap, const uint32_t default_tex);
-extern void hs_tilemap_update_vbo(const hs_tilemap tilemap);
-extern void hs_tilemap_draw(const hs_tilemap tilemap);
-extern void hs_tilemap_free(hs_tilemap* tilemap);
-extern void hs_tilemap_transform(const hs_tilemap tilemap, const mat4 trans);
-extern void hs_tilemap_perspective(const hs_tilemap tilemap, const mat4 perspective);
-extern void hs_aroom_set_xy(hs_aroom* aroom, const uint16_t x, const uint16_t y, const uint16_t data);
-extern void hs_aroom_to_tilemap(const hs_aroom aroom, hs_tilemap* tilemap, const uint16_t layer);
-extern uint8_t hs_aroom_get_xy(const hs_aroom aroom, const uint16_t x, const uint16_t y);
-extern void hs_aroom_set_tilemap(const hs_aroom aroom, hs_tilemap* tilemap, const uint16_t layer);
-extern void hs_aroom_set_tilemap_offsetv(const hs_aroom aroom, hs_tilemap* tilemap, const uint16_t layer, const vec2i offset);
+extern void     hs_tilemap_init(hs_tilemap* tilemap, const uint32_t default_tex);
+extern void     hs_tilemap_update_vbo(const hs_tilemap tilemap);
+extern void     hs_tilemap_draw(const hs_tilemap tilemap);
+extern void     hs_tilemap_free(hs_tilemap* tilemap);
+extern void     hs_aroom_set_xy(hs_aroom* aroom, const uint16_t x, const uint16_t y, const uint16_t data);
+extern void     hs_aroom_to_tilemap(const hs_aroom aroom, hs_tilemap* tilemap, const uint16_t layer);
+extern uint8_t  hs_aroom_get_xy(const hs_aroom aroom, const uint16_t x, const uint16_t y);
+extern void     hs_aroom_set_tilemap(const hs_aroom aroom, hs_tilemap* tilemap, const uint16_t layer);
+extern void     hs_aroom_set_tilemap_offsetv(const hs_aroom aroom, hs_tilemap* tilemap, const uint16_t layer, const vec2i offset);
 
 /* Sprite stuff */
-extern void hs_sprite_transform(const hs_shader_program sprite, const mat4 trans);
-extern void hs_sprite_perspective(const hs_shader_program sprite, const mat4 perspective);
-extern hs_shader_program hs_sp_sprite_create(const float width, const float height, hs_game_data gd);
-extern void hs_sprite_draw(const hs_shader_program sp);
+extern hs_shader_program hs_sp_sprite_create(const float width, const float height, const float screen_size);
+extern void hs_sprite_draw_current();
 
 extern hs_entity2 hs_entity2_create(hs_entity2_hot* hot, hs_shader_program sp, hs_tex tex);
-
-/* Nuklear */
-#ifdef HS_NUKLEAR
-#ifndef NO_STBI
-extern struct nk_image hs_nk_image_load(const char *filename);
-extern struct nk_image hs_nk_image_load_size_info(const char *filename, int* width, int* height);
-#endif
-#endif
 
 extern uint32_t hs_vao_create(const uint32_t  count);
 extern uint32_t hs_vbo_create(const float    *vbuff, const uint32_t buffsize,
@@ -296,11 +284,41 @@ inline hs_coord
 hs_uniform_coord_create(const uint32_t program,
                         const char* model, const char* view, const char* proj)
 {
+        const uint32_t u_model = glGetUniformLocation(program, model);
+        const uint32_t u_view =  glGetUniformLocation(program, view);
+        const uint32_t u_proj =  glGetUniformLocation(program, proj);
+
         return (hs_coord) {
-                .model = glGetUniformLocation(program, model),
-                .view = glGetUniformLocation(program, view),
-                .proj = glGetUniformLocation(program, proj)
+                .model = u_model,
+                .view  = u_view,
+                .proj  = u_proj,
         };
+}
+
+void
+hs_uniform_mat4_set(const uint32_t u_mat, const mat4 mat)
+{
+        glUniformMatrix4fv(u_mat, 1, GL_FALSE, castf(mat));
+}
+
+void
+hs_uniform_sp_mat4_set(const uint32_t program, const uint32_t u_mat, const mat4 mat)
+{
+        glUseProgram(program);
+        glUniformMatrix4fv(u_mat, 1, GL_FALSE, castf(mat));
+}
+
+void
+hs_uniform_vec2_set(const uint32_t u_vec, const vec2 vec)
+{
+        glUniform2fv(u_vec, 1, vec.xy);
+}
+
+void
+hs_uniform_sp_vec2_set(const uint32_t program, const uint32_t u_vec, const vec2 vec)
+{
+        glUseProgram(program);
+        glUniform2fv(u_vec, 1, vec.xy);
 }
 
 inline enum hs_key_state
@@ -370,6 +388,7 @@ hs_sp_use(const hs_shader_program sp)
 {
         glUseProgram(sp.p);
         glBindVertexArray(sp.vobj.vao);
+        if (sp.vobj.ebo) glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, sp.vobj.ebo);
 }
 
 unsigned char*
@@ -627,7 +646,7 @@ hs_avg_fps_print(const float delta, const float interval)
 inline void
 hs_tex_uniform_set(const uint32_t u_tex, const uint32_t tex)
 {
-        glUniform1i(tex, tex);
+        glUniform1i(u_tex, tex);
 }
 
 inline void
@@ -896,17 +915,35 @@ hs_camera_update_front(hs_camera* camera)
         });
 }
 
+inline void
+hs_camera2_smooth_move_to_goal(hs_camera2_smooth* cam, const float scale)
+{
+        cam->curr = vec2_add(cam->curr, vec2_scale(vec2_sub(cam->goal, cam->curr), scale));
+}
+
+inline void
+hs_camera2_smooth_view(mat4 view, const hs_camera2_smooth cam)
+{
+        mat4_translate(view, (vec3){-cam.curr.x, -cam.curr.y, 0.0f});
+}
+
 void
 hs_tilemap_set(hs_tilemap* tilemap, const uint32_t vertex, uint32_t tile)
 {
         // make tiles start at 0 instead of 1
         tile++;
 
-        const float width = 1.0f/tilemap->tileset_width;
-        const float height = 1.0f/tilemap->tileset_height;
+        float width = 1.0f/tilemap->tileset_width;
+        float height = 1.0f/tilemap->tileset_height;
         float xpos = width * (tile % tilemap->tileset_width);
         if (xpos == 0.0f) xpos = 1.0f;
-        const float ypos = height * ceilf((float)tile / (float)tilemap->tileset_width);
+        float ypos = height * ceilf((float)tile / (float)tilemap->tileset_width);
+
+        // crop it slightly, this makes the tiles next to the selected tile not accidentaly appear
+        xpos   -= 0.001f;
+        ypos   -= 0.001f;
+        width  -= 0.001f;
+        height -= 0.001f;
 
         // bottom left
         tilemap->vertices[vertex][0].tex[0] = xpos - width;
@@ -1021,11 +1058,12 @@ hs_tilemap_init(hs_tilemap* tilemap, const uint32_t default_tex)
                 tilemap->sp = hs_shader_program_create(hs_sp_texture_transform_create(), vobj);
 
                 hs_tex_uniform_set(hs_uniform_create(tilemap->sp.p, "u_tex"), 0);
-                hs_tilemap_transform(*tilemap, (mat4)MAT4_IDENTITY);
-                hs_tilemap_perspective(*tilemap, (mat4)MAT4_IDENTITY);
+                tilemap->sp.coord = hs_uniform_coord_create(tilemap->sp.p, "u_model", "u_view", "u_proj");
+                hs_uniform_mat4_set(tilemap->sp.coord.proj, (mat4)MAT4_IDENTITY);
 
                 hs_vattrib_enable_float(0, 2, 4, 0);
                 hs_vattrib_enable_float(1, 2, 4, 2);
+
         } else {
                 hs_tilemap_update_vbo(*tilemap);
         }
@@ -1042,8 +1080,7 @@ hs_tilemap_update_vbo(const hs_tilemap tilemap)
 inline void
 hs_tilemap_draw(const hs_tilemap tilemap)
 {
-        glUseProgram(tilemap.sp.p);
-        glBindVertexArray(tilemap.sp.vobj.vao);
+        hs_sp_use(tilemap.sp);
         glDrawArrays(GL_TRIANGLES, 0, 6 * tilemap.width * tilemap.height);
 }
 
@@ -1053,26 +1090,6 @@ hs_tilemap_free(hs_tilemap* tilemap)
         free(tilemap->vertices);
         hs_sp_delete(tilemap->sp);
         glDeleteTextures(1, &tilemap->tex);
-}
-
-inline void
-hs_tilemap_transform(const hs_tilemap tilemap, const mat4 trans)
-{
-        static int u_transform = -1;
-        if (u_transform < 0) u_transform = hs_uniform_create(tilemap.sp.p, "u_transform");
-
-        glUseProgram(tilemap.sp.p);
-        glUniformMatrix4fv(u_transform, 1, GL_FALSE, castf(trans));
-}
-
-inline void
-hs_tilemap_perspective(const hs_tilemap tilemap, const mat4 perspective)
-{
-        static int u_perspective = -1;
-        if (u_perspective < 0) u_perspective = hs_uniform_create(tilemap.sp.p, "u_perspective");
-
-        glUseProgram(tilemap.sp.p);
-        glUniformMatrix4fv(u_perspective, 1, GL_FALSE, castf(perspective));
 }
 
 inline void
@@ -1134,48 +1151,25 @@ hs_aroom_set_tilemap_offsetv(const hs_aroom aroom, hs_tilemap* tilemap, const ui
 }
 
 inline hs_shader_program
-hs_sp_sprite_create(const float width, const float height, hs_game_data gd)
+hs_sp_sprite_create(const float width, const float height, const float screen_size)
 {
         const float vertices[] = HS_DEFAULT_SQUARE_SCALED_TEX_VERT_ONLY(
-                (float)width/(float)gd.width, (float)height/(float)gd.height);
+                width/screen_size, width/screen_size);
 
         hs_vobj vobj = hs_vobj_create(vertices, sizeof(vertices), 0, 0, GL_STATIC_DRAW, 1);
-        const hs_shader_program sp = hs_shader_program_create(hs_sp_texture_transform_create(), vobj);
+        hs_shader_program sp = hs_shader_program_create(hs_sp_texture_transform_create(), vobj);
+        sp.coord = hs_uniform_coord_create(sp.p, "u_model", "u_view", "u_proj");
+        hs_uniform_mat4_set(sp.coord.proj, (mat4)MAT4_IDENTITY);
 
         hs_vattrib_enable_float(0, 2, 4, 0);
         hs_vattrib_enable_float(1, 2, 4, 2);
-
-        hs_sprite_transform(sp, (mat4)MAT4_IDENTITY);
-        hs_sprite_perspective(sp, (mat4)MAT4_IDENTITY);
 
         return sp;
 }
 
 inline void
-hs_sprite_transform(const hs_shader_program sprite, const mat4 trans)
+hs_sprite_draw_current()
 {
-        static int u_transform = -1;
-        if (u_transform < 0) u_transform = hs_uniform_create(sprite.p, "u_transform");
-
-        glUseProgram(sprite.p);
-        glUniformMatrix4fv(u_transform, 1, GL_FALSE, castf(trans));
-}
-
-inline void
-hs_sprite_perspective(const hs_shader_program sprite, const mat4 perspective)
-{
-        static int u_perspective = -1;
-        if (u_perspective < 0) u_perspective = hs_uniform_create(sprite.p, "u_perspective");
-
-        glUseProgram(sprite.p);
-        glUniformMatrix4fv(u_perspective, 1, GL_FALSE, castf(perspective));
-}
-
-inline void
-hs_sprite_draw(const hs_shader_program sp)
-{
-        //glUseProgram(sp.p);
-        //glBindVertexArray(sp.vobj.vao);
         glDrawArrays(GL_TRIANGLES, 0, 6);
 }
 
@@ -1186,22 +1180,6 @@ hs_entity2_create(hs_entity2_hot* hot, hs_shader_program sp, hs_tex tex)
         hot->tex = tex;
         return (hs_entity2){.hot = hot};
 }
-
-#ifdef HS_NUKLEAR
-#ifndef NO_STBI
-inline struct nk_image
-hs_nk_image_load(const char *filename)
-{
-        return  nk_image_id(hs_tex2d_create(filename, GL_RGBA, GL_CLAMP_TO_EDGE, GL_NEAREST));
-}
-
-inline struct nk_image
-hs_nk_image_load_size_info(const char *filename, int* width, int* height)
-{
-        return  nk_image_id(hs_tex2d_create_size_info(filename, GL_RGBA, GL_CLAMP_TO_EDGE, GL_NEAREST, width, height));
-}
-#endif
-#endif
 
 inline uint32_t
 hs_vao_create(const uint32_t count)

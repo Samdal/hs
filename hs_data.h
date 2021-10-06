@@ -17,27 +17,27 @@
                 -0.5f, -0.5f, 0.0f,             \
                 -0.5f,  0.5f, 0.0f }
 
-#define HS_DEFAULT_SQUARE_SCALED(scale) {         \
-                scale,  scale, 0.0f,              \
-                scale, -scale, 0.0f,              \
-                -scale, -scale, 0.0f,             \
+#define HS_DEFAULT_SQUARE_SCALED(scale) {       \
+                scale,  scale, 0.0f,            \
+                scale, -scale, 0.0f,            \
+                -scale, -scale, 0.0f,           \
                 -scale,  scale, 0.0f }
 #define HS_DEFAULT_SQUARE_INDECIES {0, 1, 3, 1, 2, 3}
 
-#define HS_DEFAULT_SQUARE_TEX_VERT_ONLY {        \
-                0.5f,  0.5f, 0.0f, 1.0f, 0.0f,   \
-                0.5f, -0.5f, 0.0f, 1.0f, 1.0f,   \
-                -0.5f,  0.5f, 0.0f, 0.0f, 0.0f,  \
-                0.5f, -0.5f, 0.0f, 1.0f, 1.0f,   \
-                -0.5f, -0.5f, 0.0f, 0.0f, 1.0f,  \
+#define HS_DEFAULT_SQUARE_TEX_VERT_ONLY {       \
+                0.5f,  0.5f, 0.0f, 1.0f, 0.0f,  \
+                0.5f, -0.5f, 0.0f, 1.0f, 1.0f,  \
+                -0.5f,  0.5f, 0.0f, 0.0f, 0.0f, \
+                0.5f, -0.5f, 0.0f, 1.0f, 1.0f,  \
+                -0.5f, -0.5f, 0.0f, 0.0f, 1.0f, \
                 -0.5f,  0.5f, 0.0f, 0.0f, 0.0f}
 
-#define HS_DEFAULT_SQUARE_SCALED_TEX_VERT_ONLY(width, height) {     \
-                width,  height, 1.0f, 0.0f,          \
-                width, -height, 1.0f, 1.0f,          \
-                -width,  height, 0.0f, 0.0f,         \
-                width, -height, 1.0f, 1.0f,          \
-                -width, -height, 0.0f, 1.0f,         \
+#define HS_DEFAULT_SQUARE_SCALED_TEX_VERT_ONLY(width, height) { \
+                width,  height, 1.0f, 0.0f,                     \
+                width, -height, 1.0f, 1.0f,                     \
+                -width,  height, 0.0f, 0.0f,                    \
+                width, -height, 1.0f, 1.0f,                     \
+                -width, -height, 0.0f, 1.0f,                    \
                 -width,  height, 0.0f, 0.0f}
 
 #define HS_SCALED_TEX_SQUARE(scale) {                   \
@@ -46,10 +46,16 @@
                 -0.5f, -0.5f, 0.0f, 0.0f, 0.0f,         \
                 -0.5f,  0.5f, 0.0f, 0.0f, scale}
 
-#define HS_SCALED_TEX_SQUARE_SCALED(scale, scale_cube) {            \
-                scale_cube,  scale_cube, 0.0f,  scale, scale,       \
-                scale_cube, -scale_cube, 0.0f,  scale, 0.0f,        \
-                -scale_cube, -scale_cube, 0.0f, 0.0f, 0.0f,         \
+#define HS_DEFAULT_SQUARE_SCALED_TEX(width, height) {   \
+                width,  height, 1.0f, 0.0f,             \
+                width, -height, 1.0f, 1.0f,             \
+                -width, -height, 0.0f, 1.0f,            \
+                -width,  height, 0.0f, 0.0f}
+
+#define HS_SCALED_TEX_SQUARE_SCALED(scale, scale_cube) {        \
+                scale_cube,  scale_cube, 0.0f,  scale, scale,   \
+                scale_cube, -scale_cube, 0.0f,  scale, 0.0f,    \
+                -scale_cube, -scale_cube, 0.0f, 0.0f, 0.0f,     \
                 -scale_cube,  scale_cube, 0.0f, 0.0f, scale}
 
 #define HS_DEFAULT_CUBE {                               \
@@ -100,11 +106,12 @@ static const char* texture_transform_vert =
         "layout (location = 0) in vec2 aPos;\n"
         "layout (location = 1) in vec2 aTexCoord;\n"
         "out vec2 TexCoord;\n"
-        "uniform mat4 u_transform;\n"
-        "uniform mat4 u_perspective;\n"
+        "uniform vec2 u_model;\n"
+        "uniform vec2 u_view;\n"
+        "uniform mat4 u_proj;\n"
         "void main()\n"
         "{\n"
-        "gl_Position = u_transform * u_perspective * vec4(aPos, 0.0f, 1.0);\n"
+        "gl_Position = u_proj * vec4(u_view + u_model + aPos, 0.0, 1.0);\n"
         "TexCoord = vec2(aTexCoord.x, aTexCoord.y);\n"
         "}";
 
@@ -118,7 +125,6 @@ static const char* texture_transform_frag =
         "{\n"
         "FragColor = texture(u_tex, TexCoord);\n"
         "}";
-
 
 // default missing texture
 // size is 32*32 RGBA
