@@ -131,6 +131,15 @@ vec2_cos(const vec2 v1, const vec2 v2)
 }
 
 inline static vec2
+vec2_mul(const vec2 v1, const vec2 v2)
+{
+        return (vec2){
+                v1.x * v2.x,
+                v1.y * v2.y,
+        };
+}
+
+inline static vec2
 vec2_scale(const vec2 vector, const float scalar)
 {
         return (vec2){

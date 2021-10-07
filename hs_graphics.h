@@ -86,14 +86,14 @@ typedef struct {
 
 typedef struct {
         vec2 tr, bl;
-} aabb2;
+} hs_aabb2;
 
 typedef struct {
         vec2i tr, bl;
-} aabb2i;
+} hs_aabb2i;
 
 typedef struct {
-        vec2 pos, half_size, frame_vel;
+        vec2 pos, half_size;
         uint32_t flags;
         hs_tex tex;
         hs_shader_program sp;
@@ -114,7 +114,7 @@ typedef struct {
 enum entity2_flags {
         AABB_STATIC = 1 << 0,
         AABB_RIGID = 1 << 1,
-        AABB_CHARACTHER = 1 << 2,
+        //AABB_CHARACTHER = 1 << 2,
         PLAYER = 1 << 3,
         PREBLINK = 1 << 4,
         INVISFRAME = 1 << 5,
@@ -186,21 +186,21 @@ extern uint32_t hs_tex2d_create_size_info(const char *filename, const GLenum for
                                      int* width, int* height);
 #endif
 
-/* aabb2 */
-extern vec2  hs_aabb2_center(const aabb2 rect);
-extern vec2i hs_aabb2i_center(const aabb2i rect);
-extern vec2  hs_aabb2_size(const aabb2 rect);
-extern vec2  hs_aabb2_half_size(const aabb2 rect);
-extern vec2i hs_aabb2i_size(const aabb2i rect);
-extern vec2i hs_aabb2i_half_size(const aabb2i rect);
+/* hs_aabb2 */
+extern vec2     hs_aabb2_center(const hs_aabb2 rect);
+extern vec2     hs_aabb2_size(const hs_aabb2 rect);
+extern vec2     hs_aabb2_half_size(const hs_aabb2 rect);
+extern vec2i    hs_aabb2i_center(const hs_aabb2i rect);
+extern vec2i    hs_aabb2i_size(const hs_aabb2i rect);
+extern vec2i    hs_aabb2i_half_size(const hs_aabb2i rect);
+extern hs_aabb2 hs_aabb2_from_entity(const hs_entity2_hot e);
 
 /* Anders Tale Dungeon generation v3 (BSP) */
-extern uint32_t hs_bsp_recti_split_in_place_append(aabb2i* rects, const uint32_t new_rect_index, const vec2i min_rect_size);
+extern uint32_t hs_bsp_recti_split_in_place_append(hs_aabb2i* rects, const uint32_t new_rect_index, const vec2i min_rect_size);
 
 /* Physics */
-extern uint32_t hs_aabb_check_collide(const aabb2 r1, const aabb2 r2);
-extern void hs_aabb_check_and_do_collide(aabb2* r1, aabb2* r2);
-extern void hs_aabb_check_and_do_collide_static(aabb2* r1, aabb2* r2);
+extern uint32_t hs_aabb2_check_collide(const hs_aabb2 r1, const hs_aabb2 r2);
+extern void hs_entity2_collide(hs_entity2_hot* e1, hs_entity2_hot* e2);
 
 /* Camera stuff */
 extern hs_camera hs_init_fps_camera();
@@ -734,43 +734,52 @@ hs_init_fps_camera()
 }
 
 inline vec2
-hs_aabb2_center(const aabb2 rect)
+hs_aabb2_center(const hs_aabb2 rect)
 {
         return vec2_add(rect.bl, hs_aabb2_half_size(rect));
 }
 
 inline vec2i
-hs_aabb2i_center(const aabb2i rect)
+hs_aabb2i_center(const hs_aabb2i rect)
 {
         return vec2i_add(rect.bl, hs_aabb2i_half_size(rect));
 }
 
 inline vec2
-hs_aabb2_size(const aabb2 rect)
+hs_aabb2_size(const hs_aabb2 rect)
 {
         return vec2_sub(rect.tr, rect.bl);
 }
 
 inline vec2
-hs_aabb2_half_size(const aabb2 rect)
+hs_aabb2_half_size(const hs_aabb2 rect)
 {
         return vec2_scale(vec2_sub(rect.tr, rect.bl), 0.5f);
 }
 
 inline vec2i
-hs_aabb2i_size(const aabb2i rect)
+hs_aabb2i_size(const hs_aabb2i rect)
 {
         return vec2i_sub(rect.tr, rect.bl);
 }
 
 inline vec2i
-hs_aabb2i_half_size(const aabb2i rect)
+hs_aabb2i_half_size(const hs_aabb2i rect)
 {
         return vec2i_div(vec2i_sub(rect.tr, rect.bl), 2);
 }
 
+inline hs_aabb2
+hs_aabb2_from_entity(const hs_entity2_hot e)
+{
+        return(hs_aabb2){
+                .bl = vec2_sub(e.pos, e.half_size),
+                .tr = vec2_add(e.pos, e.half_size),
+        };
+}
+
 inline uint32_t
-hs_bsp_recti_split_in_place_append(aabb2i* rects, const uint32_t new_rect_index, const vec2i min_rect_size)
+hs_bsp_recti_split_in_place_append(hs_aabb2i* rects, const uint32_t new_rect_index, const vec2i min_rect_size)
 {
         // this way of checking if the room is too small does not respect very non-square rectangles
         // TOOD: maybe change this^
@@ -818,7 +827,7 @@ hs_bsp_recti_split_in_place_append(aabb2i* rects, const uint32_t new_rect_index,
 }
 
 inline uint32_t
-hs_aabb_check_collide(const aabb2 r1, const aabb2 r2)
+hs_aabb2_check_collide(const hs_aabb2 r1, const hs_aabb2 r2)
 {
         if (r1.tr.y <= r2.bl.y || r2.tr.y <= r1.bl.y ||
             r1.tr.x <= r2.bl.x || r2.tr.x <= r1.bl.x)
@@ -827,15 +836,25 @@ hs_aabb_check_collide(const aabb2 r1, const aabb2 r2)
 }
 
 inline void
-hs_aabb_check_and_do_collide(aabb2* r1, aabb2* r2)
+hs_entity2_collide(hs_entity2_hot* e1, hs_entity2_hot* e2)
 {
-        const aabb2 rect1 = *r1;
-        const aabb2 rect2 = *r2;
-        if (!hs_aabb_check_collide(rect1, rect1)) return;
+        const vec2 distance = vec2_add(e1->half_size, e2->half_size);
+        const vec2 diff = vec2_sub(e1->pos, e2->pos);
+        const vec2 diffabs = {fabs(diff.x), fabs(diff.y)};
 
-        const vec2 r1_center = vec2_scale(vec2_sub(rect1.tr, rect1.bl), 2.0f);
-        const vec2 r2_center = vec2_scale(vec2_sub(rect2.tr, rect2.bl), 2.0f);
-        const vec2 diff = {fabs(r1_center.x - r2_center.x), fabs(r1_center.y - r2_center.y)};
+        if (diffabs.x >= distance.x || diffabs.y >= distance.y) return;
+
+        const float extra = 1.0001;
+
+        if (diffabs.x > diffabs.y) {
+                const float mul = (diff.x / diffabs.x) * extra;
+                e1->pos = vec2_add(e2->pos, (vec2){distance.x * mul, diff.y});
+        } else {
+                const float mul = (diff.y / diffabs.y) * extra;
+                e1->pos = vec2_add(e2->pos, (vec2){diff.x, distance.y * mul});
+        }
+        //static uint32_t col = 0;
+        //printf("collisions %d\n", col++);
 }
 
 inline void
