@@ -1302,6 +1302,9 @@ hs_init(hs_game_data* gd, const char *name, void(*framebuffer_size_callback)(GLF
         }
         if (framebuffer_size_callback) {
                 glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+                int width, height;
+                glfwGetFramebufferSize(window, &width, &height);
+                framebuffer_size_callback(window, width, height);
         }
 
         gd->window = window;
