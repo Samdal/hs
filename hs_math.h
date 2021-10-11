@@ -30,10 +30,8 @@
 
 #define min(a,b) ((a)<(b)?(a):(b))
 #define max(a,b) ((a)>(b)?(a):(b))
-
-// a is min, b is max
-#define constrain(x, a, b) ({x = x < a ? a : x; x = x > b ? b : x;})
-
+#define CLAMP(x, a, b) ({x = x < a ? a : x; x = x > b ? b : x;})
+#define MAP(x, fL, fH, tL, tH) ((x - fL) * (tH - tL) / (fH - fL) + tL)
 
 typedef union {
         struct {

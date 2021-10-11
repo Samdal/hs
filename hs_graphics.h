@@ -54,7 +54,7 @@ typedef struct {
 } hs_camera2_smooth;
 
 typedef struct {
-        float pos[2], tex[2];
+        vec2 pos, tex;
 } hs_tex_corner;
 
 typedef hs_tex_corner hs_tex_square[6];
@@ -94,6 +94,10 @@ typedef struct {
 
 typedef struct {
         vec2 pos, half_size;
+} hs_rect2;
+
+typedef struct {
+        hs_rect2 r;
         uint32_t flags;
         hs_tex tex;
         hs_shader_program sp;
@@ -139,6 +143,8 @@ extern void     hs_close(const hs_game_data gd);
 extern int32_t  hs_window_up(const hs_game_data gd);
 extern enum     hs_key_state hs_get_key_toggle(const hs_game_data gd, hs_key* key);
 extern enum     hs_key_state hs_get_key_held(const hs_game_data gd, const int key);
+extern enum     hs_key_state hs_get_mouse_toggle(const hs_game_data gd, hs_key* key);
+extern enum     hs_key_state hs_get_mouse_held(const hs_game_data gd, const int key);
 extern void     hs_clear(const float r, const  float g, const  float b, const  float a, const GLbitfield mask);
 extern void     hs_vattrib_enable(const uint32_t index, const uint32_t size,
                                   const GLenum type, const uint32_t stride, const size_t pointer);
@@ -193,14 +199,15 @@ extern vec2     hs_aabb2_half_size(const hs_aabb2 rect);
 extern vec2i    hs_aabb2i_center(const hs_aabb2i rect);
 extern vec2i    hs_aabb2i_size(const hs_aabb2i rect);
 extern vec2i    hs_aabb2i_half_size(const hs_aabb2i rect);
-extern hs_aabb2 hs_aabb2_from_entity(const hs_entity2_hot e);
+extern hs_aabb2 hs_aabb2_from_rect2(const hs_rect2 r);
 
 /* Anders Tale Dungeon generation v3 (BSP) */
 extern uint32_t hs_bsp_recti_split_in_place_append(hs_aabb2i* rects, const uint32_t new_rect_index, const vec2i min_rect_size);
 
 /* Physics */
-extern uint32_t hs_aabb2_check_collide(const hs_aabb2 r1, const hs_aabb2 r2);
-extern void hs_entity2_collide(hs_entity2_hot* e1, hs_entity2_hot* e2);
+extern uint32_t hs_rect2_is_inside(const hs_rect2 r1, const hs_rect2 r2, float* lenabs);
+extern void     hs_entity2_force_inside_rects(hs_rect2* e, hs_rect2* rects, const uint32_t rectc);
+extern void     hs_entity2_collide(hs_rect2* r1, const hs_rect2* r2);
 
 /* Camera stuff */
 extern hs_camera hs_init_fps_camera();
@@ -217,13 +224,13 @@ extern void hs_camera_update_front(hs_camera* camera);
 #define HS_CAMERA2_SMOOTH_DEFAULT {.zoom = 1.0f}
 extern void hs_camera2_smooth_view(mat4 view, const hs_camera2_smooth cam);
 extern void hs_camera2_smooth_move_to_goal(hs_camera2_smooth* cam, const float scale);
+extern vec2 hs_px_coord_to_global(const vec2 cam_offset, const vec2 scale, const hs_aabb2 res, const vec2 px);
 
 /* Tilemap stuff */
 extern void     hs_tilemap_set(hs_tilemap* tilemap, const uint32_t vertex, uint32_t tile);
 extern void     hs_tilemap_setall(hs_tilemap* tilemap, const uint32_t tile);
 extern void     hs_tilemap_set_xy(hs_tilemap* tilemap, const uint32_t x, const uint32_t y, uint32_t tile);
 extern uint32_t hs_tilemap_sizeof(const hs_tilemap tilemap);
-// expects width, height, sub_tex and half_tile to be filled out
 extern void     hs_tilemap_init(hs_tilemap* tilemap, const uint32_t default_tex);
 extern void     hs_tilemap_update_vbo(const hs_tilemap tilemap);
 extern void     hs_tilemap_draw(const hs_tilemap tilemap);
@@ -233,6 +240,7 @@ extern void     hs_aroom_to_tilemap(const hs_aroom aroom, hs_tilemap* tilemap, c
 extern uint8_t  hs_aroom_get_xy(const hs_aroom aroom, const uint16_t x, const uint16_t y);
 extern void     hs_aroom_set_tilemap(const hs_aroom aroom, hs_tilemap* tilemap, const uint16_t layer);
 extern void     hs_aroom_set_tilemap_offsetv(const hs_aroom aroom, hs_tilemap* tilemap, const uint16_t layer, const vec2i offset);
+extern vec2     hs_tilemap_pos_to_global(const hs_tilemap tilemap, vec2i pos);
 
 /* Sprite stuff */
 extern hs_shader_program hs_sp_sprite_create(const float width, const float height, const float screen_size);
@@ -340,6 +348,30 @@ inline enum hs_key_state
 hs_get_key_held(const hs_game_data gd, const int key)
 {
         const int state = glfwGetKey(gd.window, key);
+        if (state == GLFW_PRESS)
+                return HS_KEY_DOWN;
+        return HS_KEY_UP;
+}
+
+inline enum hs_key_state
+hs_get_mouse_toggle(const hs_game_data gd, hs_key* key)
+{
+        const int state = glfwGetMouseButton(gd.window, key->key);
+        const int previous_state = key->previous_state;
+        key->previous_state = state;
+
+        if (previous_state != state) {
+                if (state == GLFW_PRESS) return HS_KEY_PRESSED;
+                else                     return HS_KEY_RELEASED;
+        }
+
+        return HS_KEY_UP;
+}
+
+inline enum hs_key_state
+hs_get_mouse_held(const hs_game_data gd, const int key)
+{
+        const int state = glfwGetMouseButton(gd.window, key);
         if (state == GLFW_PRESS)
                 return HS_KEY_DOWN;
         return HS_KEY_UP;
@@ -770,11 +802,11 @@ hs_aabb2i_half_size(const hs_aabb2i rect)
 }
 
 inline hs_aabb2
-hs_aabb2_from_entity(const hs_entity2_hot e)
+hs_aabb2_from_rect2(const hs_rect2 r)
 {
         return(hs_aabb2){
-                .bl = vec2_sub(e.pos, e.half_size),
-                .tr = vec2_add(e.pos, e.half_size),
+                .bl = vec2_sub(r.pos, r.half_size),
+                .tr = vec2_add(r.pos, r.half_size),
         };
 }
 
@@ -827,31 +859,74 @@ hs_bsp_recti_split_in_place_append(hs_aabb2i* rects, const uint32_t new_rect_ind
 }
 
 inline uint32_t
-hs_aabb2_check_collide(const hs_aabb2 r1, const hs_aabb2 r2)
+hs_rect2_is_inside(const hs_rect2 r1, const hs_rect2 r2, float* lenabs)
 {
-        if (r1.tr.y <= r2.bl.y || r2.tr.y <= r1.bl.y ||
-            r1.tr.x <= r2.bl.x || r2.tr.x <= r1.bl.x)
+        const vec2 distance = vec2_add(r1.half_size, r2.half_size);
+        const vec2 diff = vec2_sub(r1.pos, r2.pos);
+        const vec2 diffabs = {fabs(diff.x), fabs(diff.y)};
+        *lenabs = vec2_len(diffabs);
+
+        if (diffabs.x >= distance.x || diffabs.y >= distance.y)
                 return false;
         return true;
 }
 
-inline void
-hs_entity2_collide(hs_entity2_hot* e1, hs_entity2_hot* e2)
+void
+hs_entity2_force_inside_rects(hs_rect2* e, hs_rect2* rects, const uint32_t rectc)
 {
-        const vec2 distance = vec2_add(e1->half_size, e2->half_size);
-        const vec2 diff = vec2_sub(e1->pos, e2->pos);
+        float len_to_closest_rect = INFINITY;
+        uint32_t closest_rect = 0;
+        for (uint32_t i = 0; i < rectc; i++) {
+                float len;
+                hs_rect2 r = rects[i];
+                r.half_size = vec2_sub(r.half_size, vec2_scale(e->half_size, 2.0f));
+                if (hs_rect2_is_inside(*e, r, &len)) return;
+
+                if (len < len_to_closest_rect) {
+                        closest_rect = i;
+                        len_to_closest_rect = len;
+                }
+        }
+
+        /* move player inside closest room */
+
+        const vec2 distance = vec2_sub(rects[closest_rect].half_size, e->half_size);
+        vec2 diff = vec2_sub(e->pos, rects[closest_rect].pos);
+        const vec2 diffabs = {fabs(diff.x), fabs(diff.y)};
+        const float extra = 1.0f - 0.001f;
+
+        if (diffabs.x > diffabs.y) {
+                const float mul = (diff.x / diffabs.x) * extra;
+                CLAMP(diff.x, distance.x, -distance.x);
+                e->pos = vec2_add(rects[closest_rect].pos, (vec2){distance.x * mul, diff.y});
+        } else {
+                const float mul = (diff.y / diffabs.y) * extra;
+                CLAMP(diff.y, distance.y, -distance.y);
+                e->pos = vec2_add(rects[closest_rect].pos, (vec2){diff.x, distance.y * mul});
+        }
+}
+
+inline void
+hs_entity2_collide(hs_rect2* r1, const hs_rect2* r2)
+{
+        const vec2 distance = vec2_add(r1->half_size, r2->half_size);
+        vec2 diff = vec2_sub(r1->pos, r2->pos);
+        if (diff.x == 0) diff.x = random_float_negative() * 0.00000001;
+        if (diff.y == 0) diff.y = random_float_negative() * 0.00000001;
+
         const vec2 diffabs = {fabs(diff.x), fabs(diff.y)};
 
         if (diffabs.x >= distance.x || diffabs.y >= distance.y) return;
+
 
         const float extra = 1.0001;
 
         if (diffabs.x > diffabs.y) {
                 const float mul = (diff.x / diffabs.x) * extra;
-                e1->pos = vec2_add(e2->pos, (vec2){distance.x * mul, diff.y});
+                r1->pos = vec2_add(r2->pos, (vec2){distance.x * mul, diff.y});
         } else {
                 const float mul = (diff.y / diffabs.y) * extra;
-                e1->pos = vec2_add(e2->pos, (vec2){diff.x, distance.y * mul});
+                r1->pos = vec2_add(r2->pos, (vec2){diff.x, distance.y * mul});
         }
         //static uint32_t col = 0;
         //printf("collisions %d\n", col++);
@@ -940,6 +1015,19 @@ hs_camera2_smooth_move_to_goal(hs_camera2_smooth* cam, const float scale)
         cam->curr = vec2_add(cam->curr, vec2_scale(vec2_sub(cam->goal, cam->curr), scale));
 }
 
+vec2
+hs_px_coord_to_global(const vec2 cam_offset, const vec2 scale, const hs_aabb2 res, const vec2 px)
+{
+        if (px.x < res.bl.x || px.y < res.bl.y) return (vec2){NAN, NAN};
+        if (px.x > res.tr.x || px.y > res.tr.y) return (vec2){NAN, NAN};
+
+        vec2 global;
+        global.x = MAP(px.x, res.bl.x, res.tr.x, -1/scale.x, 1/scale.x);
+        global.y = MAP(px.y, res.bl.y, res.tr.y, -1/scale.y, 1/scale.y);
+
+        return vec2_add(global, cam_offset);
+}
+
 inline void
 hs_camera2_smooth_view(mat4 view, const hs_camera2_smooth cam)
 {
@@ -965,28 +1053,28 @@ hs_tilemap_set(hs_tilemap* tilemap, const uint32_t vertex, uint32_t tile)
         height -= 0.001f;
 
         // bottom left
-        tilemap->vertices[vertex][0].tex[0] = xpos - width;
-        tilemap->vertices[vertex][0].tex[1] = ypos - height;
+        tilemap->vertices[vertex][0].tex.x = xpos - width;
+        tilemap->vertices[vertex][0].tex.y = ypos - height;
 
         // bottom right
-        tilemap->vertices[vertex][1].tex[0] = xpos;
-        tilemap->vertices[vertex][1].tex[1] = ypos - height;
+        tilemap->vertices[vertex][1].tex.x = xpos;
+        tilemap->vertices[vertex][1].tex.y = ypos - height;
 
         // top right
-        tilemap->vertices[vertex][2].tex[0] = xpos;
-        tilemap->vertices[vertex][2].tex[1] = ypos;
+        tilemap->vertices[vertex][2].tex.x = xpos;
+        tilemap->vertices[vertex][2].tex.y = ypos;
 
         // top right
-        tilemap->vertices[vertex][3].tex[0] = xpos;
-        tilemap->vertices[vertex][3].tex[1] = ypos;
+        tilemap->vertices[vertex][3].tex.x = xpos;
+        tilemap->vertices[vertex][3].tex.y = ypos;
 
         // top left
-        tilemap->vertices[vertex][4].tex[0] = xpos - width;
-        tilemap->vertices[vertex][4].tex[1] = ypos;
+        tilemap->vertices[vertex][4].tex.x = xpos - width;
+        tilemap->vertices[vertex][4].tex.y = ypos;
 
         // bottom left
-        tilemap->vertices[vertex][5].tex[0] = xpos - width;
-        tilemap->vertices[vertex][5].tex[1] = ypos - height;
+        tilemap->vertices[vertex][5].tex.x = xpos - width;
+        tilemap->vertices[vertex][5].tex.y = ypos - height;
 
 }
 
@@ -1042,24 +1130,24 @@ hs_tilemap_init(hs_tilemap* tilemap, const uint32_t default_tex)
                         const float left = offset.x - tilemap->tile_width;
 
                         // triangle one
-                        tilemap->vertices[vertex][0].pos[0] = left;
-                        tilemap->vertices[vertex][0].pos[1] = bottom;
+                        tilemap->vertices[vertex][0].pos.x = left;
+                        tilemap->vertices[vertex][0].pos.y = bottom;
 
-                        tilemap->vertices[vertex][1].pos[0] = right;
-                        tilemap->vertices[vertex][1].pos[1] = bottom;
+                        tilemap->vertices[vertex][1].pos.x = right;
+                        tilemap->vertices[vertex][1].pos.y = bottom;
 
-                        tilemap->vertices[vertex][2].pos[0] = right;
-                        tilemap->vertices[vertex][2].pos[1] = top;
+                        tilemap->vertices[vertex][2].pos.x = right;
+                        tilemap->vertices[vertex][2].pos.y = top;
 
                         // triangle two
-                        tilemap->vertices[vertex][3].pos[0] = right;
-                        tilemap->vertices[vertex][3].pos[1] = top;
+                        tilemap->vertices[vertex][3].pos.x = right;
+                        tilemap->vertices[vertex][3].pos.y = top;
 
-                        tilemap->vertices[vertex][4].pos[0] = left;
-                        tilemap->vertices[vertex][4].pos[1] = top;
+                        tilemap->vertices[vertex][4].pos.x = left;
+                        tilemap->vertices[vertex][4].pos.y = top;
 
-                        tilemap->vertices[vertex][5].pos[0] = left;
-                        tilemap->vertices[vertex][5].pos[1] = bottom;
+                        tilemap->vertices[vertex][5].pos.x = left;
+                        tilemap->vertices[vertex][5].pos.y = bottom;
 
                         // set texture data
                         hs_tilemap_set(tilemap, vertex, default_tex);
@@ -1168,6 +1256,14 @@ hs_aroom_set_tilemap_offsetv(const hs_aroom aroom, hs_tilemap* tilemap, const ui
                         for(uint32_t y = offset.y; y < offset.y + aroom.height; y++)
                                 hs_tilemap_set_xy(tilemap, x, y, aroom.data[i++]);
         }
+}
+
+vec2
+hs_tilemap_pos_to_global(const hs_tilemap tilemap, vec2i pos)
+{
+        assert(tilemap.vertices);
+        const uint32_t v = pos.y * tilemap.width + pos.x;
+        return vec2_add(tilemap.vertices[v][0].pos, vec2_sub(tilemap.vertices[v][4].pos, tilemap.vertices[v][0].pos));
 }
 
 inline hs_shader_program
