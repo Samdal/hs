@@ -19,8 +19,11 @@ extern struct nk_image hs_nk_image_load(const char *filename);
 extern struct nk_image hs_nk_image_load_size_info(const char *filename, int* width, int* height);
 #endif // NO_STBI
 
-
 #ifdef HS_IMPL
+#define HS_NUKLEAR_IMPL
+#endif //HS_IMPL
+
+#ifdef HS_NUKLEAR_IMPL
 
 #ifndef NO_STBI
 inline struct nk_image
@@ -36,7 +39,7 @@ hs_nk_image_load_size_info(const char *filename, int* width, int* height)
 }
 #endif // NO_STBI
 
-#endif // HS_IMPL
+#endif // HS_NUKLEAR_IMPL
 
 #define HS_NUKLEAR_H_
 #endif // HS_NUKLEAR_H_

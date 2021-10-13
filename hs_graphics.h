@@ -1,29 +1,39 @@
 #ifndef HS_GRAPHICS_H_
 #define HS_GRAPHICS_H_
 
-#include "external/glad/glad.h"
-#include "external/glfw/glfw3.h"
+#include <assert.h>
+#include <string.h>
 #include <stdlib.h>
 #include <stdbool.h>
-#include <assert.h>
+#include <stdint.h>
 #include <stdio.h>
-
-#ifndef NO_STBI
-#define STB_IMAGE_IMPLEMENTATION
-#include "external/stb_image.h"
-#endif
 
 #ifdef WIN32
 #define OEMRESOURCE
 #include <windows.h>
 #endif
 
+#include "hs_math.h"
+#include "hs_data.h"
+#include "hs_util.h"
+
+#define STBI_NO_SIMD
+
+#ifndef NO_STBI
+#define STB_IMAGE_IMPLEMENTATION
+#include "external/stb_image.h"
+#endif
+
+#include "external/glad/glad.h"
+#include "external/glfw/glfw3.h"
+
 #ifdef HS_SFD
 #include "external/sfd/src/sfd.c"
 #endif
 
-#include "hs_math.h"
-#include "hs_data.h"
+#ifdef HS_NUKLEAR
+#include "hs_nuklear.h"
+#endif
 
 #define hs_key_init(glfw_key) &(hs_key){.key = glfw_key}
 
@@ -57,7 +67,9 @@ typedef struct {
         vec2 pos, tex;
 } hs_tex_corner;
 
-typedef hs_tex_corner hs_tex_square[6];
+typedef struct {
+         hs_tex_corner c[6];
+} hs_tex_square;
 
 typedef struct {
         uint32_t width, height, tileset_width, tileset_height;
@@ -67,17 +79,20 @@ typedef struct {
         hs_tex_square* vertices;
 } hs_tilemap;
 
+typedef struct {
+        uint32_t tileset_width, tileset_height;
+        float tile_width, tile_height;
+        hs_shader_program sp;
+        hs_tex tex;
+        hs_dynarr vertices;
+} hs_dyn_tilemap;
+
 // this is how anders tale rooms are stored
-// --IMPORTANT: LAYERS MUST BE AT LEAST 1 :IMPORTANT--
+// --LAYERS MUST BE AT LEAST 1--
 typedef struct {
         uint16_t width, height, layers;
         uint8_t* data;
 } hs_aroom;
-
-typedef struct {
-        uint32_t size, position_offset;
-        uint8_t* data;
-} hs_byte_buffer;
 
 typedef struct {
         uint32_t width, height;
@@ -139,58 +154,66 @@ typedef struct {
         int previous_state;
 } hs_key;
 
+/* Keys */
+extern enum hs_key_state hs_get_key_toggle(const hs_game_data gd,   hs_key* key);
+extern enum hs_key_state hs_get_mouse_toggle(const hs_game_data gd, hs_key* key);
+extern enum hs_key_state hs_get_key_held(const hs_game_data gd,   const int key);
+extern enum hs_key_state hs_get_mouse_held(const hs_game_data gd, const int key);
+
+/* MISC */
 extern void     hs_close(const hs_game_data gd);
+extern float    hs_delta();
+extern void     hs_sp_use(const hs_shader_program sp);
 extern int32_t  hs_window_up(const hs_game_data gd);
-extern enum     hs_key_state hs_get_key_toggle(const hs_game_data gd, hs_key* key);
-extern enum     hs_key_state hs_get_key_held(const hs_game_data gd, const int key);
-extern enum     hs_key_state hs_get_mouse_toggle(const hs_game_data gd, hs_key* key);
-extern enum     hs_key_state hs_get_mouse_held(const hs_game_data gd, const int key);
 extern void     hs_clear(const float r, const  float g, const  float b, const  float a, const GLbitfield mask);
-extern void     hs_vattrib_enable(const uint32_t index, const uint32_t size,
-                                  const GLenum type, const uint32_t stride, const size_t pointer);
+extern void     hs_avg_frametime_print(const float delta, const float interval);
+extern void     hs_avg_fps_print(const float delta, const float interval);
+extern void     hs_fps_callback_init(const hs_game_data gd, void(*mouse_callback)(GLFWwindow*, double xpos, double ypos));
+
+/* Vertex Buffer */
+extern uint32_t hs_vao_create(const uint32_t  count);
+extern uint32_t hs_vbo_create(const float    *vbuff, const uint32_t buffsize,
+                              const GLenum    usage, const uint32_t count);
+extern uint32_t hs_ebo_create(const uint32_t *ibuff, const uint32_t buffsize,
+                              const GLenum    usage, const uint32_t count);
+extern hs_vobj  hs_vobj_create(const float    *vbuff, const uint32_t vbuffsize,
+                              const uint32_t *ibuff, const uint32_t ibuffsize,
+                              const GLenum    usage, const uint32_t count);
+extern void     hs_vobj_free(hs_vobj vobj);
+extern void     hs_vattrib_enable(const uint32_t index, const uint32_t size, const GLenum type,
+                                  const uint32_t stride, const size_t pointer);
 extern void     hs_vattrib_enable_float(const uint32_t index, const uint32_t size,
                                          const uint32_t stride, const size_t pointer);
+
+/* Shader program */
+extern hs_shader_program hs_shader_program_create(const uint32_t sp, hs_vobj vobj);
+extern uint32_t          hs_shader_create(const char *src, const GLenum shader_type);
+extern uint32_t          hs_sp_create(const uint32_t v_shader, const uint32_t f_shader);
+extern void              hs_sp_delete(hs_shader_program sp);
+extern uint32_t          hs_sp_texture_transform_create();
+extern uint32_t hs_sp_create_from_src(const char *v_src,   const char *f_src);
+extern uint32_t hs_sp_create_from_file(const char *v_file, const char *f_file);
+
+/* Uniforms */
 extern uint32_t hs_uniform_create(const uint32_t program, const char* name);
-extern hs_coord hs_uniform_coord_create(const uint32_t program,
-                                        const char* model, const char* view, const char* proj);
+extern hs_coord hs_uniform_coord_create(const uint32_t program, const char* model, const char* view, const char* proj);
 extern void     hs_uniform_mat4_set(const uint32_t u_mat, const mat4 mat);
 extern void     hs_uniform_sp_mat4_set(const uint32_t program, const uint32_t u_mat, const mat4 mat);
 extern void     hs_uniform_vec2_set(const uint32_t u_vec, const vec2 vec);
 extern void     hs_uniform_sp_vec2_set(const uint32_t program, const uint32_t u_vec, const vec2 vec);
-
-// time since previous call of hs_delta
-extern float hs_delta();
-extern void hs_sp_use(const hs_shader_program sp);
-
-extern unsigned char* hs_file_read(const char *file_path);
-extern hs_byte_buffer hs_byte_buffer_from_file(const char* file_path);
-extern hs_aroom hs_aroom_from_file(const char* file_path);
-extern void hs_aroom_write_to_file(const char* file_path, const hs_aroom aroom);
-extern uint32_t hs_shader_create(const char *src, const GLenum shader_type);
-extern uint32_t hs_sp_create(const uint32_t v_shader, const uint32_t f_shader);
-extern uint32_t hs_sp_texture_transform_create();
-extern uint32_t hs_sp_create_from_src(const char *v_src, const char *f_src);
-extern uint32_t hs_sp_create_from_file(const char *v_file, const char *f_file);
-extern uint32_t hs_fbo_color_create(const uint32_t width, const uint32_t height, uint32_t* tex);
-extern void     hs_fbo_draw_to_screen(const uint32_t fbo, const uint32_t src_w, const uint32_t src_h,
-                      const uint32_t dst_x, const uint32_t dst_y, const uint32_t dst_w, const uint32_t dst_h);
-extern void     hs_sp_delete(hs_shader_program sp);
-extern void     hs_avg_frametime_print(const float delta, const float interval);
-extern void     hs_avg_fps_print(const float delta, const float interval);
-extern hs_shader_program hs_shader_program_create(const uint32_t sp, hs_vobj vobj);
-
 extern void     hs_tex_uniform_set(const hs_tex tex, const uint32_t val);
 extern void     hs_tex2d_activate(const uint32_t texture_object, const GLenum texindex);
 #ifndef NO_STBI
-extern uint32_t hs_tex2d_create(const char *filename, const GLenum format,
-                                     const GLenum  wrap, const GLenum filter);
+extern uint32_t hs_tex2d_create(const char *filename, const GLenum format, const GLenum  wrap, const GLenum filter);
 extern uint32_t hs_tex2d_create_pixel(const char *filename, const GLenum format);
-extern uint32_t hs_tex2d_create_size_info_pixel(const char *filename, const GLenum format,
-                                                int* width, int* height);
-extern uint32_t hs_tex2d_create_size_info(const char *filename, const GLenum format,
-                                     const GLenum  wrap, const GLenum filter,
-                                     int* width, int* height);
+extern uint32_t hs_tex2d_create_size_info(const char *filename, const GLenum format, const GLenum wrap, const GLenum filter, int* width, int* height);
+extern uint32_t hs_tex2d_create_size_info_pixel(const char *filename, const GLenum format, int* width, int* height);
 #endif
+
+/* FBO */
+extern uint32_t hs_fbo_color_create(const uint32_t width,  const uint32_t height, uint32_t* tex);
+extern void     hs_fbo_draw_to_screen(const uint32_t fbo,  const uint32_t src_w, const uint32_t src_h,
+                      const uint32_t dst_x, const uint32_t dst_y, const uint32_t dst_w, const uint32_t dst_h);
 
 /* hs_aabb2 */
 extern vec2     hs_aabb2_center(const hs_aabb2 rect);
@@ -209,24 +232,29 @@ extern uint32_t hs_rect2_is_inside(const hs_rect2 r1, const hs_rect2 r2, float* 
 extern void     hs_entity2_force_inside_rects(hs_rect2* e, hs_rect2* rects, const uint32_t rectc);
 extern void     hs_entity2_collide(hs_rect2* r1, const hs_rect2* r2);
 
-/* Camera stuff */
+/* Camera */
 extern hs_camera hs_init_fps_camera();
-extern void hs_camera_move_front(hs_camera* camera, const float scale);
-extern void hs_camera_move_right(hs_camera* camera, const float scale);
-extern void hs_camera_move_frontv(const hs_camera camera, vec3* new_pos);
-extern void hs_camera_move_backv(const hs_camera camera, vec3* new_pos);
-extern void hs_camera_move_rightv(const hs_camera camera, vec3* new_pos);
-extern void hs_camera_move_leftv(const hs_camera camera, vec3* new_pos);
-extern void hs_camera_look_at(mat4 view, const hs_camera camera);
-extern vec2 hs_pos_to_offset(const float xpos, const float ypos, const float sens);
-extern void hs_camera_update_front(hs_camera* camera);
+extern void      hs_camera_move_front(hs_camera* camera, const float scale);
+extern void      hs_camera_move_right(hs_camera* camera, const float scale);
+extern void      hs_camera_move_frontv(const hs_camera camera, vec3* new_pos);
+extern void      hs_camera_move_backv(const hs_camera camera, vec3* new_pos);
+extern void      hs_camera_move_rightv(const hs_camera camera, vec3* new_pos);
+extern void      hs_camera_move_leftv(const hs_camera camera, vec3* new_pos);
+extern void      hs_camera_look_at(mat4 view, const hs_camera camera);
+extern vec2      hs_pos_to_offset(const float xpos, const float ypos, const float sens);
+extern void      hs_camera_update_front(hs_camera* camera);
 
 #define HS_CAMERA2_SMOOTH_DEFAULT {.zoom = 1.0f}
 extern void hs_camera2_smooth_view(mat4 view, const hs_camera2_smooth cam);
 extern void hs_camera2_smooth_move_to_goal(hs_camera2_smooth* cam, const float scale);
 extern vec2 hs_px_coord_to_global(const vec2 cam_offset, const vec2 scale, const hs_aabb2 res, const vec2 px);
 
-/* Tilemap stuff */
+/* Tilemap */
+extern hs_aroom hs_aroom_from_file(const char* file_path);
+extern void     hs_aroom_write_to_file(const char* file_path, const hs_aroom aroom);
+extern void     hs_tex_square_set_pos(hs_tex_square* square, const hs_aabb2 pos);
+extern void     hs_tex_square_set_tex(hs_tex_square* square, hs_aabb2 tex);
+
 extern void     hs_tilemap_set(hs_tilemap* tilemap, const uint32_t vertex, uint32_t tile);
 extern void     hs_tilemap_setall(hs_tilemap* tilemap, const uint32_t tile);
 extern void     hs_tilemap_set_xy(hs_tilemap* tilemap, const uint32_t x, const uint32_t y, uint32_t tile);
@@ -242,30 +270,23 @@ extern void     hs_aroom_set_tilemap(const hs_aroom aroom, hs_tilemap* tilemap, 
 extern void     hs_aroom_set_tilemap_offsetv(const hs_aroom aroom, hs_tilemap* tilemap, const uint16_t layer, const vec2i offset);
 extern vec2     hs_tilemap_pos_to_global(const hs_tilemap tilemap, vec2i pos);
 
-/* Sprite stuff */
+extern uint32_t hs_dyn_tilemap_sizeof(const hs_dyn_tilemap tilemap);
+extern void     hs_dyn_tilemap_init(hs_dyn_tilemap* tilemap, size_t size);
+extern void     hs_dyn_tilemap_clear(hs_dyn_tilemap* tilemap);
+extern void     hs_dyn_tilemap_free(hs_dyn_tilemap* tilemap);
+extern void     hs_dyn_tilemap_push(hs_dyn_tilemap* tilemap, const vec2i pos, uint32_t tile);
+extern void     hs_aroom_push_dyn_tilemap(const hs_aroom aroom, hs_dyn_tilemap* tilemap, const uint16_t layer, const vec2i offset);
+extern void     hs_dyn_tilemap_update_vbo(const hs_dyn_tilemap tilemap);
+extern void     hs_dyn_tilemap_draw(const hs_dyn_tilemap tilemap);
+extern vec2     hs_dyn_tilemap_pos_to_global(const hs_dyn_tilemap tilemap, vec2i pos);
+
+/* Entity */
 extern hs_shader_program hs_sp_sprite_create(const float width, const float height, const float screen_size);
-extern void hs_sprite_draw_current();
+extern void              hs_sprite_draw_current();
 
 extern hs_entity2 hs_entity2_create(hs_entity2_hot* hot, hs_shader_program sp, hs_tex tex);
 
-extern uint32_t hs_vao_create(const uint32_t  count);
-extern uint32_t hs_vbo_create(const float    *vbuff, const uint32_t buffsize,
-                              const GLenum    usage, const uint32_t count);
-extern uint32_t hs_ebo_create(const uint32_t *ibuff, const uint32_t buffsize,
-                              const GLenum    usage, const uint32_t count);
-extern hs_vobj hs_vobj_create(const float    *vbuff, const uint32_t vbuffsize,
-                              const uint32_t *ibuff, const uint32_t ibuffsize,
-                              const GLenum    usage, const uint32_t count);
-// Expects vobj to be heap allocated
-extern void hs_vobj_free(hs_vobj vobj);
-extern void hs_fps_callback_init(const hs_game_data gd, void(*mouse_callback)(GLFWwindow*, double xpos, double ypos));
-
-#ifdef HS_NUKLEAR
-#include "hs_nuklear.h"
-#endif
-
 #ifdef HS_IMPL
-
 static uint32_t hs_default_missing_tex = 0;
 
 #define GLAD_IMPL
@@ -423,57 +444,6 @@ hs_sp_use(const hs_shader_program sp)
         if (sp.vobj.ebo) glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, sp.vobj.ebo);
 }
 
-unsigned char*
-hs_file_read(const char *file_path)
-{
-        FILE *file = fopen(file_path, "r");
-        if (!file) {
-                fprintf(stderr, "---error reading file \"%s\"---\n", file_path);
-                assert(file);
-        }
-
-        fseek(file, 0L, SEEK_END);
-        uint32_t readsize = ftell(file);
-        rewind(file);
-
-        unsigned char* buffer = malloc(readsize);
-        assert(buffer);
-
-        fread(buffer, 1, readsize, file);
-        buffer[readsize] = '\0';
-
-        fclose(file);
-        return buffer;
-}
-
-inline hs_byte_buffer
-hs_byte_buffer_from_file(const char* file_path)
-{
-        /* same as hs_file_read, just need the "readsize" information */
-        FILE *file = fopen(file_path, "r");
-        if (!file) {
-                fprintf(stderr, "---error reading file \"%s\"---\n", file_path);
-                assert(file);
-        }
-
-        fseek(file, 0L, SEEK_END);
-        uint32_t readsize = ftell(file);
-        rewind(file);
-
-        unsigned char* buffer = malloc(readsize);
-        assert(buffer);
-
-        fread(buffer, 1, readsize, file);
-        buffer[readsize] = '\0';
-
-        fclose(file);
-
-        return (hs_byte_buffer){
-                .size = readsize,
-                .data = buffer,
-        };
-}
-
 hs_aroom
 hs_aroom_from_file(const char* file_path)
 {
@@ -578,8 +548,8 @@ hs_sp_create_from_src(const char *v_src, const char *f_src)
 uint32_t
 hs_sp_create_from_file(const char *v_file, const char *f_file)
 {
-        unsigned char *v_src = hs_file_read(v_file);
-        unsigned char *f_src = hs_file_read(f_file);
+        char* v_src = hs_file_read_null_term(v_file);
+        char* f_src = hs_file_read_null_term(f_file);
 
         uint32_t sp = hs_sp_create_from_src(v_src, f_src);
 
@@ -753,7 +723,7 @@ hs_tex2d_create_size_info(const char *filename, const GLenum format,
 
         return tex;
 }
-#endif
+#endif // NO_STBI
 
 inline hs_camera
 hs_init_fps_camera()
@@ -911,13 +881,12 @@ hs_entity2_collide(hs_rect2* r1, const hs_rect2* r2)
 {
         const vec2 distance = vec2_add(r1->half_size, r2->half_size);
         vec2 diff = vec2_sub(r1->pos, r2->pos);
+
+        if (fabs(diff.x) >= distance.x || fabs(diff.y) >= distance.y) return;
+
         if (diff.x == 0) diff.x = random_float_negative() * 0.00000001;
         if (diff.y == 0) diff.y = random_float_negative() * 0.00000001;
-
         const vec2 diffabs = {fabs(diff.x), fabs(diff.y)};
-
-        if (diffabs.x >= distance.x || diffabs.y >= distance.y) return;
-
 
         const float extra = 1.0001;
 
@@ -1034,48 +1003,82 @@ hs_camera2_smooth_view(mat4 view, const hs_camera2_smooth cam)
         mat4_translate(view, (vec3){-cam.curr.x, -cam.curr.y, 0.0f});
 }
 
+inline void
+hs_tex_square_set_pos(hs_tex_square* square, const hs_aabb2 pos)
+{
+        // triangle one
+        square->c[0].pos.x = pos.bl.x;
+        square->c[0].pos.y = pos.bl.y;
+
+        square->c[1].pos.x = pos.tr.x;
+        square->c[1].pos.y = pos.bl.y;
+
+        square->c[2].pos.x = pos.tr.x;
+        square->c[2].pos.y = pos.tr.y;
+
+        // triangle two
+        square->c[3].pos.x = pos.tr.x;
+        square->c[3].pos.y = pos.tr.y;
+
+        square->c[4].pos.x = pos.bl.x;
+        square->c[4].pos.y = pos.tr.y;
+
+        square->c[5].pos.x = pos.bl.x;
+        square->c[5].pos.y = pos.bl.y;
+}
+
 void
+hs_tex_square_set_tex(hs_tex_square* square, hs_aabb2 tex)
+{
+        // crop it slightly, this makes the tiles next to the selected tile not accidentaly appear
+        tex.bl.x += 0.001f;
+        tex.bl.y += 0.001f;
+        tex.bl.x -= 0.001f;
+        tex.tr.y -= 0.001f;
+
+        // bottom left
+        square->c[0].tex.x = tex.bl.x;
+        square->c[0].tex.y = tex.bl.y;
+
+        // bottom right
+        square->c[1].tex.x = tex.tr.x;
+        square->c[1].tex.y = tex.bl.y;
+
+        // top right
+        square->c[2].tex.x = tex.tr.x;
+        square->c[2].tex.y = tex.tr.y;
+
+        // top right
+        square->c[3].tex.x = tex.tr.x;
+        square->c[3].tex.y = tex.tr.y;
+
+        // top left
+        square->c[4].tex.x = tex.bl.x;
+        square->c[4].tex.y = tex.tr.y;
+
+        // bottom left
+        square->c[5].tex.x = tex.bl.x;
+        square->c[5].tex.y = tex.bl.y;
+}
+
+inline void
 hs_tilemap_set(hs_tilemap* tilemap, const uint32_t vertex, uint32_t tile)
 {
         // make tiles start at 0 instead of 1
         tile++;
 
-        float width = 1.0f/tilemap->tileset_width;
-        float height = 1.0f/tilemap->tileset_height;
-        float xpos = width * (tile % tilemap->tileset_width);
+        const float width      = 1.0f/tilemap->tileset_width;
+        const float height     = 1.0f/tilemap->tileset_height;
+        const float ypos       = height * ceilf((float)tile / (float)tilemap->tileset_width);
+        float xpos             = width * (tile % tilemap->tileset_width);
         if (xpos == 0.0f) xpos = 1.0f;
-        float ypos = height * ceilf((float)tile / (float)tilemap->tileset_width);
 
-        // crop it slightly, this makes the tiles next to the selected tile not accidentaly appear
-        xpos   -= 0.001f;
-        ypos   -= 0.001f;
-        width  -= 0.001f;
-        height -= 0.001f;
+        hs_aabb2 tex = {
+                .bl = (vec2){xpos - width, ypos - height},
+                .tr = (vec2){xpos, ypos},
+        };
 
-        // bottom left
-        tilemap->vertices[vertex][0].tex.x = xpos - width;
-        tilemap->vertices[vertex][0].tex.y = ypos - height;
-
-        // bottom right
-        tilemap->vertices[vertex][1].tex.x = xpos;
-        tilemap->vertices[vertex][1].tex.y = ypos - height;
-
-        // top right
-        tilemap->vertices[vertex][2].tex.x = xpos;
-        tilemap->vertices[vertex][2].tex.y = ypos;
-
-        // top right
-        tilemap->vertices[vertex][3].tex.x = xpos;
-        tilemap->vertices[vertex][3].tex.y = ypos;
-
-        // top left
-        tilemap->vertices[vertex][4].tex.x = xpos - width;
-        tilemap->vertices[vertex][4].tex.y = ypos;
-
-        // bottom left
-        tilemap->vertices[vertex][5].tex.x = xpos - width;
-        tilemap->vertices[vertex][5].tex.y = ypos - height;
-
+        hs_tex_square_set_tex(&tilemap->vertices[vertex], tex);
 }
 
 void
@@ -1120,36 +1123,17 @@ hs_tilemap_init(hs_tilemap* tilemap, const uint32_t default_tex)
         const float offset_x_default = -(float)tilemap->width * tilemap->tile_width + tilemap->tile_width;
         vec2 offset = {offset_x_default, -(float)tilemap->height * tilemap->tile_height + tilemap->tile_height};
         uint32_t vertex = 0;
+        hs_aabb2 square;
 
         for (uint32_t y = 0; y < tilemap->height; y++) {
-                const float bottom = offset.y + tilemap->tile_height;
-                const float top = offset.y - tilemap->tile_height;
+                square.tr.y = offset.y + tilemap->tile_height;
+                square.bl.y = offset.y - tilemap->tile_height;
 
                 for (uint32_t x = 0; x < tilemap->width; x++) {
-                        const float right = offset.x + tilemap->tile_width;
-                        const float left = offset.x - tilemap->tile_width;
+                        square.tr.x = offset.x + tilemap->tile_width;
+                        square.bl.x = offset.x - tilemap->tile_width;
 
-                        // triangle one
-                        tilemap->vertices[vertex][0].pos.x = left;
-                        tilemap->vertices[vertex][0].pos.y = bottom;
-
-                        tilemap->vertices[vertex][1].pos.x = right;
-                        tilemap->vertices[vertex][1].pos.y = bottom;
-
-                        tilemap->vertices[vertex][2].pos.x = right;
-                        tilemap->vertices[vertex][2].pos.y = top;
-
-                        // triangle two
-                        tilemap->vertices[vertex][3].pos.x = right;
-                        tilemap->vertices[vertex][3].pos.y = top;
-
-                        tilemap->vertices[vertex][4].pos.x = left;
-                        tilemap->vertices[vertex][4].pos.y = top;
-
-                        tilemap->vertices[vertex][5].pos.x = left;
-                        tilemap->vertices[vertex][5].pos.y = bottom;
-
-                        // set texture data
+                        hs_tex_square_set_pos(&tilemap->vertices[vertex], square);
                         hs_tilemap_set(tilemap, vertex, default_tex);
 
                         offset.x += tilemap->tile_width * 2.0f;
@@ -1174,7 +1158,6 @@ hs_tilemap_init(hs_tilemap* tilemap, const uint32_t default_tex)
         } else {
                 hs_tilemap_update_vbo(*tilemap);
         }
-
 }
 
 inline void
@@ -1261,9 +1244,127 @@ hs_aroom_set_tilemap_offsetv(const hs_aroom aroom, hs_tilemap* tilemap, const ui
 vec2
 hs_tilemap_pos_to_global(const hs_tilemap tilemap, vec2i pos)
 {
-        assert(tilemap.vertices);
-        const uint32_t v = pos.y * tilemap.width + pos.x;
-        return vec2_add(tilemap.vertices[v][0].pos, vec2_sub(tilemap.vertices[v][4].pos, tilemap.vertices[v][0].pos));
+        return (vec2) {
+                .x = (float)pos.x * 2.0f * tilemap.tile_width  - (float)tilemap.width  * tilemap.tile_width,
+                .y = (float)pos.y * 2.0f * tilemap.tile_height - (float)tilemap.height * tilemap.tile_height,
+        };
+}
+
+uint32_t
+hs_dyn_tilemap_sizeof(const hs_dyn_tilemap tilemap)
+{
+        return sizeof(hs_tex_square) * tilemap.vertices.len;
+}
+
+void
+hs_dyn_tilemap_init(hs_dyn_tilemap* tilemap, size_t size)
+{
+        if (tilemap->tile_height    <= 0.0f) tilemap->tile_height = 0.1f;
+        if (tilemap->tile_width     <= 0.0f) tilemap->tile_width = 0.1f;
+        if (tilemap->tileset_height == 0)    tilemap->tileset_height = 1;
+        if (tilemap->tileset_width  == 0)    tilemap->tileset_width = 1;
+        if (tilemap->tex            == 0)    tilemap->tex = hs_default_missing_tex;
+        if (size                    == 0)    size = 10000;
+
+        tilemap->vertices = hs_dynarr_init(hs_tex_square, size);
+
+        hs_vobj vobj = hs_vobj_create(castf(tilemap->vertices.data), hs_dyn_tilemap_sizeof(*tilemap), 0, 0, GL_DYNAMIC_DRAW, 1);
+        tilemap->sp = hs_shader_program_create(hs_sp_texture_transform_create(), vobj);
+
+        hs_tex_uniform_set(hs_uniform_create(tilemap->sp.p, "u_tex"), 0);
+        tilemap->sp.coord = hs_uniform_coord_create(tilemap->sp.p, "u_model", "u_view", "u_proj");
+        hs_uniform_mat4_set(tilemap->sp.coord.proj, (mat4)MAT4_IDENTITY);
+
+        hs_vattrib_enable_float(0, 2, 4, 0);
+        hs_vattrib_enable_float(1, 2, 4, 2);
+}
+
+inline void
+hs_dyn_tilemap_clear(hs_dyn_tilemap* tilemap)
+{
+        hs_dynarr_clear(tilemap->vertices);
+}
+
+inline void
+hs_dyn_tilemap_free(hs_dyn_tilemap* tilemap)
+{
+        hs_dynarr_free(tilemap->vertices);
+        hs_sp_delete(tilemap->sp);
+        glDeleteTextures(1, &tilemap->tex);
+}
+
+void
+hs_dyn_tilemap_push(hs_dyn_tilemap* tilemap, const vec2i pos, uint32_t tile)
+{
+        hs_tex_square new_tile;
+
+        // make tiles start at 0 instead of 1
+        tile++;
+
+        const float width      = 1.0f/tilemap->tileset_width;
+        const float height     = 1.0f/tilemap->tileset_height;
+        const float ypos       = height * ceilf((float)tile / (float)tilemap->tileset_width);
+        float xpos             = width * (tile % tilemap->tileset_width);
+        if (xpos == 0.0f) xpos = 1.0f;
+
+        hs_aabb2 tex = {
+                .bl = (vec2){xpos - width, ypos - height},
+                .tr = (vec2){xpos, ypos},
+        };
+        hs_tex_square_set_tex(&new_tile, tex);
+
+        vec2 offset = hs_dyn_tilemap_pos_to_global(*tilemap, pos);
+        hs_aabb2 square_pos;
+        square_pos.bl.x = offset.x - tilemap->tile_width;
+        square_pos.bl.y = offset.y - tilemap->tile_height;
+        square_pos.tr.x = offset.x + tilemap->tile_width;
+        square_pos.tr.y = offset.y + tilemap->tile_height;
+        hs_tex_square_set_pos(&new_tile, square_pos);
+
+        hs_dynarr_push(tilemap->vertices, hs_tex_square, new_tile);
+}
+
+void
+hs_dyn_tilemap_update_vbo(const hs_dyn_tilemap tilemap)
+{
+        glBindBuffer(GL_ARRAY_BUFFER, tilemap.sp.vobj.vbo);
+        glBufferData(GL_ARRAY_BUFFER, hs_dyn_tilemap_sizeof(tilemap), castf(tilemap.vertices.data), GL_DYNAMIC_DRAW);
+}
+
+inline void
+hs_dyn_tilemap_draw(const hs_dyn_tilemap tilemap)
+{
+        hs_sp_use(tilemap.sp);
+        glDrawArrays(GL_TRIANGLES, 0, 6 * tilemap.vertices.len);
+}
+
+void
+hs_aroom_push_dyn_tilemap(const hs_aroom aroom, hs_dyn_tilemap* tilemap, const uint16_t layer, const vec2i offset)
+{
+        vec2i pos;
+        if (layer > 1) {
+                const uint32_t layer_offset = (aroom.width * aroom.height * layer) - (aroom.width * aroom.height);
+                uint32_t i = 0;
+                for(uint32_t x = offset.x; x < aroom.width; x++)
+                        for(uint32_t y = offset.y; y < aroom.height; y++)
+                                hs_dyn_tilemap_push(tilemap, (vec2i){x + offset.x, y + offset.y},
+                                                    aroom.data[layer_offset + i++]);
+        } else {
+                uint32_t i = 0;
+                for(uint32_t x = 0; x < aroom.width; x++)
+                        for(uint32_t y = 0; y < aroom.height; y++)
+                                hs_dyn_tilemap_push(tilemap, (vec2i){x + offset.x, y + offset.y},
+                                                    aroom.data[i++]);
+        }
+}
+
+vec2
+hs_dyn_tilemap_pos_to_global(const hs_dyn_tilemap tilemap, vec2i pos)
+{
+        return (vec2) {
+                .x = (float)pos.x * 2.0f * tilemap.tile_width,
+                .y = (float)pos.y * 2.0f * tilemap.tile_height,
+        };
 }
 
 inline hs_shader_program
@@ -1369,7 +1470,7 @@ enum hs_init_flags {
         HS_DEPTH_TESTING = 1 << 3,
 };
 
-inline static hs_game_data
+inline static void
 hs_init(hs_game_data* gd, const char *name, void(*framebuffer_size_callback)(GLFWwindow*, int, int), const uint32_t flags)
 {
         glfwInit();
@@ -1400,20 +1501,15 @@ hs_init(hs_game_data* gd, const char *name, void(*framebuffer_size_callback)(GLF
                 glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 32, 32, 0, GL_RGBA, GL_UNSIGNED_BYTE, hs_default_missing_tex_data);
                 glGenerateMipmap(GL_TEXTURE_2D);
         }
-#endif
+#endif // NO_STBI
+
+        if (flags & HS_WIREFRAME_MODE) glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+        if (flags & HS_NO_VSYNC) hs_disable_vsync();
+        if (flags & HS_DEPTH_TESTING) glEnable(GL_DEPTH_TEST);
 
         if (flags & HS_BLEND_MODE) {
                 glEnable(GL_BLEND);
                 glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        }
-        if (flags & HS_WIREFRAME_MODE) {
-                glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-        }
-        if (flags & HS_NO_VSYNC) {
-                hs_disable_vsync();
-        }
-        if (flags & HS_DEPTH_TESTING) {
-                glEnable(GL_DEPTH_TEST);
         }
         if (framebuffer_size_callback) {
                 glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
